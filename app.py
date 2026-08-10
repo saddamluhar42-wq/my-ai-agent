@@ -6,7 +6,6 @@ import urllib.error
 
 import streamlit as st
 import psycopg
-from autonomous import start_background_services
 
 
 # ============================================================
@@ -45,8 +44,6 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 APP_NAME = "My AI Agent"
 
-start_background_services()
-
 
 # ============================================================
 # SESSION STATE
@@ -76,11 +73,8 @@ if "memory_loaded" not in st.session_state:
 if "last_provider" not in st.session_state:
     st.session_state.last_provider = None
 
-if "pending_clarification" not in st.session_state:
-    st.session_state.pending_clarification = None
-
-if "confirmed_request" not in st.session_state:
-    st.session_state.confirmed_request = None
+if "clarification_answer" not in st.session_state:
+    st.session_state.clarification_answer = None
 
 
 # ============================================================
@@ -295,7 +289,7 @@ def get_or_create_user():
     if not database_available():
         return None
 
-    external_id = "default-user"
+    external_id = f"streamlit-{st.session_state.session_id}"
 
     row = database_query(
         """
@@ -322,7 +316,7 @@ def get_or_create_user():
         """,
         (
             external_id,
-            "Default User",
+            "Anonymous User",
         ),
         fetch="one",
     )
@@ -1564,248 +1558,6 @@ def ask_ai(
 
 
 # ============================================================
-# SMART CLARIFICATION / CONFIRMATION
-# ============================================================
-
-def parse_json_response(text):
-    """Extract a JSON object from an AI response."""
-    text = (text or "").strip()
-
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if len(lines) >= 3:
-            text = "\n".join(lines[1:-1]).strip()
-
-    try:
-        return json.loads(text)
-    except Exception:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(text[start:end + 1])
-            except Exception:
-                return None
-
-    return None
-
-
-def analyze_request_for_clarification(
-    user_input,
-    attachment_context="",
-):
-    """Ask the AI whether the request needs user confirmation."""
-    prompt = f"""
-You are a request-clarification controller for an AI coding/general-purpose agent.
-
-Analyze the user's request and decide whether the agent genuinely needs clarification
-before doing the task.
-
-Only ask for clarification when an important decision is missing and different choices
-would materially change the result. Do NOT ask unnecessary questions for simple requests.
-
-Examples that usually DO NOT need clarification:
-- "Write a Python calculator."
-- "Explain this code."
-- "Summarize this file."
-- "Fix this obvious syntax error."
-
-Examples that MAY need clarification:
-- "Build me a website" when the type/purpose is unknown.
-- "Make an app" when platform is unknown.
-- "Modify this code" when the desired behavior is unclear.
-
-Return ONLY valid JSON in exactly this shape:
-{{
-  "needs_clarification": true,
-  "title": "Short title",
-  "message": "Brief explanation of what needs confirmation.",
-  "questions": [
-    {{
-      "id": "q1",
-      "question": "Question text",
-      "options": ["Option A", "Option B", "Let AI decide"]
-    }}
-  ]
-}}
-
-Rules:
-- "needs_clarification" must be true or false.
-- If false, questions must be [].
-- Ask at most 3 questions.
-- Each question must have 2 to 5 useful options.
-- Always include "Let AI decide" when a reasonable default is possible.
-- Do not ask for secrets, passwords, API keys, or sensitive personal information.
-
-ATTACHED FILE CONTEXT:
-{attachment_context}
-
-USER REQUEST:
-{user_input}
-"""
-
-    try:
-        answer, _, _ = ask_ai(prompt)
-        result = parse_json_response(answer)
-
-        if not isinstance(result, dict):
-            return None
-
-        if not result.get("needs_clarification"):
-            return None
-
-        questions = result.get("questions", [])
-        if not isinstance(questions, list) or not questions:
-            return None
-
-        cleaned = []
-
-        for index, question in enumerate(questions[:3]):
-            if not isinstance(question, dict):
-                continue
-
-            qid = str(
-                question.get("id")
-                or f"q{index + 1}"
-            )
-            qtext = str(
-                question.get("question")
-                or ""
-            ).strip()
-
-            options = question.get("options", [])
-            if not isinstance(options, list):
-                options = []
-
-            options = [
-                str(option).strip()
-                for option in options[:5]
-                if str(option).strip()
-            ]
-
-            if qtext and len(options) >= 2:
-                if "Let AI decide" not in options:
-                    options.append("Let AI decide")
-
-                cleaned.append(
-                    {
-                        "id": qid,
-                        "question": qtext,
-                        "options": options,
-                    }
-                )
-
-        if not cleaned:
-            return None
-
-        return {
-            "title": str(
-                result.get(
-                    "title",
-                    "Let's confirm a few details",
-                )
-            ),
-            "message": str(
-                result.get(
-                    "message",
-                    "I need a few choices before continuing.",
-                )
-            ),
-            "questions": cleaned,
-        }
-
-    except Exception:
-        # Clarification is an enhancement, not a blocker.
-        # If the preflight check fails, continue normally.
-        return None
-
-
-def clarification_dialog():
-    """Render a Claude-style confirmation dialog for ambiguous requests."""
-    pending = st.session_state.pending_clarification
-
-    if not pending:
-        return
-
-    @st.dialog(
-        pending.get(
-            "title",
-            "Let's confirm a few details",
-        )
-    )
-    def show_dialog():
-        st.write(
-            pending.get(
-                "message",
-                "Please confirm the following choices.",
-            )
-        )
-
-        answers = {}
-
-        for question in pending["questions"]:
-            qid = question["id"]
-
-            answers[qid] = st.radio(
-                question["question"],
-                question["options"],
-                key=f"clarification_{qid}",
-            )
-
-        st.divider()
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button(
-                "Cancel",
-                use_container_width=True,
-            ):
-                st.session_state.pending_clarification = None
-                st.rerun()
-
-        with col2:
-            if st.button(
-                "Confirm & Continue",
-                type="primary",
-                use_container_width=True,
-            ):
-                selected = []
-
-                for question in pending["questions"]:
-                    selected.append(
-                        f"{question['question']}: "
-                        f"{answers[question['id']]}"
-                    )
-
-                clarification_context = (
-                    "USER CONFIRMED OPTIONS:\n"
-                    + "\n".join(
-                        f"- {item}"
-                        for item in selected
-                    )
-                )
-
-                st.session_state.confirmed_request = {
-                    "user_input": pending["user_input"],
-                    "attachment_context": pending.get(
-                        "attachment_context",
-                        "",
-                    ),
-                    "file_names": pending.get(
-                        "file_names",
-                        [],
-                    ),
-                    "clarification_context": clarification_context,
-                }
-
-                st.session_state.pending_clarification = None
-                st.rerun()
-
-    show_dialog()
-
-
-# ============================================================
 # BUILD MEMORY
 # ============================================================
 
@@ -1878,246 +1630,19 @@ for message in (
 
 
 # ============================================================
-# SMART CLARIFICATION POPUP
+# CHAT INPUT
 # ============================================================
 
-@st.dialog("Choose an option")
-def clarification_dialog():
-    data = st.session_state.pending_clarification or {}
-    st.write(data.get("question", "Please choose an option."))
-
-    options = data.get("options", [])
-
-    for index, option in enumerate(options):
-        if st.button(
-            str(option),
-            key=f"clarify_option_{index}",
-            use_container_width=True,
-        ):
-            st.session_state.clarification_answer = str(option)
-            st.session_state.pending_clarification = None
-            st.rerun()
-
-    st.divider()
-
-    other = st.text_input(
-        "Other",
-        placeholder="Type your own answer...",
-        key="clarify_other_text",
-    )
-
-    if other.strip():
-        if st.button(
-            "Continue",
-            key="clarify_other_continue",
-            use_container_width=True,
-        ):
-            st.session_state.clarification_answer = other.strip()
-            st.session_state.pending_clarification = None
-            st.rerun()
-
-
-if st.session_state.pending_clarification:
-    clarification_dialog()
-
-
-# ============================================================
-# CHAT INPUT + FILE UPLOAD
-# ============================================================
-
-chat_submission = st.chat_input(
-    "Apne AI Agent ko command do...",
-    accept_file=True,
-    file_type=[
-        "txt",
-        "md",
-        "py",
-        "json",
-        "csv",
-        "log",
-        "yaml",
-        "yml",
-        "xml",
-    ],
+user_input = st.chat_input(
+    "Apne AI Agent ko command do..."
 )
 
-user_input = ""
-uploaded_files = []
-attachment_context = ""
-clarification_context = ""
-
-# ------------------------------------------------------------
-# REQUEST FROM NORMAL CHAT INPUT
-# ------------------------------------------------------------
-
-if chat_submission:
-    user_input = getattr(
-        chat_submission,
-        "text",
-        "",
-    ) or ""
-
-    uploaded_files = list(
-        getattr(
-            chat_submission,
-            "files",
-            [],
-        )
-        or []
-    )
-
-    if uploaded_files:
-        attachment_blocks = []
-
-        for uploaded_file in uploaded_files:
-            try:
-                file_name = uploaded_file.name
-                file_bytes = uploaded_file.getvalue()
-
-                file_text = file_bytes.decode(
-                    "utf-8",
-                    errors="replace",
-                )
-
-                max_chars = 50000
-
-                if len(file_text) > max_chars:
-                    file_text = (
-                        file_text[:max_chars]
-                        + "\n\n[File content truncated at 50,000 characters.]"
-                    )
-
-                attachment_blocks.append(
-                    f"ATTACHED FILE: {file_name}\n"
-                    f"FILE CONTENT:\n{file_text}"
-                )
-
-            except Exception as error:
-                attachment_blocks.append(
-                    "ATTACHED FILE ERROR: "
-                    + str(error)
-                )
-
-        attachment_context = "\n\n".join(
-            attachment_blocks
-        )
-
-    if uploaded_files and not user_input.strip():
-        user_input = (
-            "Analyze the attached file(s) and explain "
-            "their contents clearly."
-        )
-
-    # --------------------------------------------------------
-    # SMART CLARIFICATION PREFLIGHT
-    # --------------------------------------------------------
-
-    clarification = analyze_request_for_clarification(
-        user_input,
-        attachment_context,
-    )
-
-    if clarification:
-        st.session_state.pending_clarification = {
-            **clarification,
-            "user_input": user_input,
-            "attachment_context": attachment_context,
-            "file_names": [
-                file.name
-                for file in uploaded_files
-            ],
-        }
-
-        clarification_dialog()
-        st.stop()
-
-# ------------------------------------------------------------
-# REQUEST AFTER USER CONFIRMS POPUP
-# ------------------------------------------------------------
-
-if st.session_state.confirmed_request:
-    confirmed = st.session_state.confirmed_request
-
-    user_input = confirmed["user_input"]
-    attachment_context = confirmed.get(
-        "attachment_context",
-        "",
-    )
-    clarification_context = confirmed.get(
-        "clarification_context",
-        "",
-    )
-
-    st.session_state.confirmed_request = None
-
-# ------------------------------------------------------------
-# SHOW POPUP IF A PENDING REQUEST EXISTS
-# ------------------------------------------------------------
-
-if st.session_state.pending_clarification:
-    clarification_dialog()
-    st.stop()
 
 # ============================================================
 # PROCESS USER MESSAGE
 # ============================================================
 
-if st.session_state.clarification_answer:
-    user_input = st.session_state.clarification_answer
-    st.session_state.clarification_answer = None
-
-# ------------------------------------------------------------
-# SMART CLARIFICATION DETECTION
-# ------------------------------------------------------------
-
-if (
-    user_input
-    and not uploaded_files
-    and not st.session_state.clarification_answer
-):
-    lower_input = user_input.lower().strip()
-
-    ambiguous_patterns = (
-        "make an app",
-        "make a website",
-        "build an app",
-        "build a website",
-        "create an app",
-        "create a website",
-        "app bana do",
-        "website bana do",
-        "application bana do",
-    )
-
-    specific_platform = any(
-        word in lower_input
-        for word in (
-            "android",
-            "web app",
-            "website",
-            "desktop",
-            "ios",
-        )
-    )
-
-    if (
-        any(pattern in lower_input for pattern in ambiguous_patterns)
-        and not specific_platform
-    ):
-        st.session_state.pending_clarification = {
-            "question": "What type of application do you want?",
-            "options": [
-                "Android App",
-                "Web App",
-                "Desktop App",
-                "AI Agent",
-            ],
-        }
-        st.rerun()
-
-
-if user_input or uploaded_files:
-
+if user_input:
 
     # --------------------------------------------------------
     # SAVE USER TO SESSION
@@ -2135,15 +1660,6 @@ if user_input or uploaded_files:
         st.markdown(
             user_input
         )
-
-        if uploaded_files:
-            st.caption(
-                "Attached: "
-                + ", ".join(
-                    file.name
-                    for file in uploaded_files
-                )
-            )
 
     # --------------------------------------------------------
     # SAVE USER TO DATABASE
@@ -2365,14 +1881,6 @@ POSTGRESQL MEMORY CONTEXT:
 WEB SEARCH CONTEXT:
 
 {web_context}
-
-ATTACHED FILE CONTEXT:
-
-{attachment_context}
-
-USER CONFIRMATION CONTEXT:
-
-{clarification_context}
 
 LATEST USER REQUEST:
 
