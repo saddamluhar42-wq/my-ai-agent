@@ -41,6 +41,13 @@ ALLOWED_FILE_TYPES = [
 
 
 # ============================================================
+# EMPTY STATE IMAGE
+# ============================================================
+
+EMPTY_STATE_IMAGE = "assets/agent_astronaut.webp"
+
+
+# ============================================================
 # IMAGE REQUEST DETECTION
 # ============================================================
 
@@ -70,6 +77,10 @@ IMAGE_REQUEST_PHRASES = [
     "image chahiye",
 ]
 
+
+# ============================================================
+# IMAGE CONFIRMATION
+# ============================================================
 
 YES_WORDS = [
     "yes",
@@ -101,7 +112,7 @@ NO_WORDS = [
 
 
 # ============================================================
-# STATE
+# CHAT STATE
 # ============================================================
 
 def initialize_chat_state():
@@ -159,8 +170,6 @@ def render_chat_header():
         "Auto",
     )
 
-    provider_text = provider
-
     st.markdown(
         f"""
 <div class="chat-header">
@@ -171,7 +180,7 @@ def render_chat_header():
             font-weight:400;
             margin-left:8px;
         ">
-            {provider_text}
+            {provider}
         </span>
     </div>
 </div>
@@ -186,34 +195,92 @@ def render_chat_header():
 
 def render_empty_state():
 
+    # --------------------------------------------------------
+    # Top spacing
+    # --------------------------------------------------------
+
+    st.markdown(
+        "<div style='height:55px'></div>",
+        unsafe_allow_html=True,
+    )
+
+    # --------------------------------------------------------
+    # CHARACTER IMAGE
+    # --------------------------------------------------------
+
+    image_col_left, image_col, image_col_right = st.columns(
+        [1, 1, 1]
+    )
+
+    with image_col:
+
+        try:
+
+            st.image(
+                EMPTY_STATE_IMAGE,
+                width=155,
+            )
+
+        except Exception:
+
+            st.markdown(
+                """
+                <div style="
+                    text-align:center;
+                    font-size:48px;
+                    padding:30px;
+                ">
+                    🤖
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # --------------------------------------------------------
+    # TITLE
+    # --------------------------------------------------------
+
     st.markdown(
         """
-<div class="empty-state">
-    <div class="empty-state-icon">
-        ✦
-    </div>
-
-    <div class="empty-state-title">
-        How can I help you today?
-    </div>
-
-    <div class="empty-state-subtitle">
-        Ask anything, upload a file, or request an image.
-    </div>
-</div>
+        <div style="
+            text-align:center;
+            margin-top:8px;
+            margin-bottom:8px;
+        ">
+            <div style="
+                font-size:28px;
+                font-weight:600;
+                color:#f5f5f5;
+            ">
+                How can I help you today?
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
+    # --------------------------------------------------------
+    # SUBTITLE
+    # --------------------------------------------------------
+
     st.markdown(
         """
-<div style="
-    width:min(820px,92%);
-    margin:38px auto 0 auto;
-">
+        <div style="
+            text-align:center;
+            color:#9b9b9b;
+            font-size:14px;
+            line-height:1.6;
+            margin-bottom:30px;
+        ">
+            Ask anything, upload a file, or request an image.
+        </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # --------------------------------------------------------
+    # SUGGESTION BUTTONS
+    # --------------------------------------------------------
 
     col1, col2, col3 = st.columns(
         3,
@@ -256,11 +323,6 @@ def render_empty_state():
                 "Generate an image of a beautiful cinematic landscape."
             )
 
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
 
 # ============================================================
 # MESSAGE RENDERING
@@ -292,6 +354,10 @@ def render_messages():
 
         with st.chat_message(role):
 
+            # ------------------------------------------------
+            # IMAGE
+            # ------------------------------------------------
+
             if message_type == "image":
 
                 render_image_message(
@@ -301,9 +367,19 @@ def render_messages():
 
                 continue
 
+            # ------------------------------------------------
+            # TEXT
+            # ------------------------------------------------
+
             if content:
 
-                st.markdown(content)
+                st.markdown(
+                    content
+                )
+
+            # ------------------------------------------------
+            # PROVIDER
+            # ------------------------------------------------
 
             if (
                 role == "assistant"
@@ -314,14 +390,14 @@ def render_messages():
             ):
 
                 provider = message.get(
-                    "provider",
+                    "provider"
+                )
+
+                model = message.get(
+                    "model"
                 )
 
                 if provider:
-
-                    model = message.get(
-                        "model",
-                    )
 
                     if model:
 
@@ -346,7 +422,7 @@ def render_image_message(
 ):
 
     image_data = message.get(
-        "image",
+        "image"
     )
 
     if not image_data:
@@ -372,11 +448,11 @@ def render_image_message(
     )
 
     provider = message.get(
-        "provider",
+        "provider"
     )
 
     model = message.get(
-        "model",
+        "model"
     )
 
     if provider:
@@ -417,17 +493,29 @@ def render_composer():
         submission.files
     )
 
+    # --------------------------------------------------------
+    # FILES
+    # --------------------------------------------------------
+
     if files:
 
         process_uploaded_files(
             files
         )
 
+    # --------------------------------------------------------
+    # FILE ONLY MESSAGE
+    # --------------------------------------------------------
+
     if not text and files:
 
         text = build_file_message(
             files
         )
+
+    # --------------------------------------------------------
+    # MESSAGE
+    # --------------------------------------------------------
 
     if text:
 
@@ -525,7 +613,7 @@ def process_uploaded_files(
 
 
 # ============================================================
-# IMAGE REQUEST
+# IMAGE REQUEST DETECTION
 # ============================================================
 
 def is_image_request(prompt):
@@ -541,7 +629,7 @@ def is_image_request(prompt):
 
 
 # ============================================================
-# CONFIRMATION
+# IMAGE CONFIRMATION
 # ============================================================
 
 def is_yes_confirmation(prompt):
@@ -602,6 +690,10 @@ def handle_pending_image_confirmation(
     if not pending_prompt:
         return False
 
+    # --------------------------------------------------------
+    # YES
+    # --------------------------------------------------------
+
     if is_yes_confirmation(prompt):
 
         st.session_state[
@@ -622,6 +714,10 @@ def handle_pending_image_confirmation(
         )
 
         return True
+
+    # --------------------------------------------------------
+    # NO
+    # --------------------------------------------------------
 
     if is_no_confirmation(prompt):
 
@@ -653,6 +749,10 @@ def handle_pending_image_confirmation(
 
         return True
 
+    # --------------------------------------------------------
+    # INVALID CONFIRMATION
+    # --------------------------------------------------------
+
     st.session_state[
         "messages"
     ].append(
@@ -680,7 +780,7 @@ def handle_pending_image_confirmation(
 
 
 # ============================================================
-# IMAGE GENERATION
+# CONFIRMED IMAGE GENERATION
 # ============================================================
 
 def generate_confirmed_image(
@@ -778,7 +878,7 @@ def generate_confirmed_image(
 
 
 # ============================================================
-# USER MESSAGE HANDLER
+# USER MESSAGE
 # ============================================================
 
 def handle_user_message(
@@ -830,7 +930,7 @@ def handle_user_message(
         return
 
     # --------------------------------------------------------
-    # NORMAL TEXT CHAT
+    # NORMAL AI CHAT
     # --------------------------------------------------------
 
     st.session_state[
@@ -864,6 +964,10 @@ def handle_user_message(
             )
         )
 
+        # ----------------------------------------------------
+        # MEMORY
+        # ----------------------------------------------------
+
         if st.session_state.get(
             "enable_chat_memory",
             True,
@@ -880,12 +984,20 @@ def handle_user_message(
 
             memory_context = ""
 
+        # ----------------------------------------------------
+        # FILE CONTEXT
+        # ----------------------------------------------------
+
         file_context = (
             st.session_state.get(
                 "file_context",
                 "",
             )
         )
+
+        # ----------------------------------------------------
+        # PROVIDER
+        # ----------------------------------------------------
 
         preferred_provider = (
             st.session_state.get(
@@ -898,6 +1010,10 @@ def handle_user_message(
 
             preferred_provider = None
 
+        # ----------------------------------------------------
+        # AGENT PROMPT
+        # ----------------------------------------------------
+
         agent_prompt = (
             build_agent_prompt(
                 user_input=prompt,
@@ -906,6 +1022,10 @@ def handle_user_message(
                 file_context=file_context,
             )
         )
+
+        # ----------------------------------------------------
+        # AI
+        # ----------------------------------------------------
 
         with st.spinner(
             "Thinking..."
@@ -935,11 +1055,19 @@ def handle_user_message(
                 "AI returned an empty response."
             )
 
+        # ----------------------------------------------------
+        # DATABASE
+        # ----------------------------------------------------
+
         save_assistant_message(
             conversation_id,
             answer,
             provider=provider,
         )
+
+        # ----------------------------------------------------
+        # UI
+        # ----------------------------------------------------
 
         st.session_state[
             "messages"
@@ -949,6 +1077,7 @@ def handle_user_message(
                 "content": answer,
                 "provider": provider,
                 "model": model,
+                "type": "text",
             }
         )
 
@@ -969,6 +1098,7 @@ def handle_user_message(
                     "AI Agent error:\n\n"
                     f"{error}"
                 ),
+                "type": "text",
             }
         )
 
