@@ -63,7 +63,10 @@ ANTHROPIC_API_KEY_3 = os.getenv(
 # IMAGE GENERATION
 # ============================================================
 
+# ------------------------------------------------------------
 # Hugging Face
+# ------------------------------------------------------------
+
 HF_TOKEN = os.getenv(
     "HF_TOKEN"
 )
@@ -77,17 +80,27 @@ HF_TOKEN_3 = os.getenv(
 )
 
 
+# ------------------------------------------------------------
 # NVIDIA
-NVIDIA_API_KEY = os.getenv(
-    "NVIDIA_API_KEY"
+#
+# IMPORTANT:
+# Render variable names:
+#
+# NVIDIA_IMAGE_1
+# NVIDIA_IMAGE_2
+# NVIDIA_IMAGE_3
+# ------------------------------------------------------------
+
+NVIDIA_IMAGE_1 = os.getenv(
+    "NVIDIA_IMAGE_1"
 )
 
-NVIDIA_API_KEY_2 = os.getenv(
-    "NVIDIA_API_KEY_2"
+NVIDIA_IMAGE_2 = os.getenv(
+    "NVIDIA_IMAGE_2"
 )
 
-NVIDIA_API_KEY_3 = os.getenv(
-    "NVIDIA_API_KEY_3"
+NVIDIA_IMAGE_3 = os.getenv(
+    "NVIDIA_IMAGE_3"
 )
 
 
@@ -147,7 +160,7 @@ HF_IMAGE_MODEL = os.getenv(
 
 NVIDIA_IMAGE_MODEL = os.getenv(
     "NVIDIA_IMAGE_MODEL",
-    "black-forest-labs/FLUX.1-dev",
+    "flux.1-dev",
 )
 
 
@@ -223,7 +236,8 @@ TAVILY_URL = (
 )
 
 NVIDIA_URL = (
-    "https://integrate.api.nvidia.com/v1/images/generations"
+    "https://integrate.api.nvidia.com/"
+    "v1/images/generations"
 )
 
 TELEGRAM_URL = (
@@ -352,23 +366,40 @@ def is_hf_3_configured():
 
 
 # ============================================================
-# HELPERS — NVIDIA
+# HELPERS — NVIDIA IMAGE
 # ============================================================
 
 def is_nvidia_configured():
     return bool(
-        NVIDIA_API_KEY
-        or NVIDIA_API_KEY_2
-        or NVIDIA_API_KEY_3
+        NVIDIA_IMAGE_1
+        or NVIDIA_IMAGE_2
+        or NVIDIA_IMAGE_3
     )
 
 
 def is_nvidia_2_configured():
-    return bool(NVIDIA_API_KEY_2)
+    return bool(NVIDIA_IMAGE_2)
 
 
 def is_nvidia_3_configured():
-    return bool(NVIDIA_API_KEY_3)
+    return bool(NVIDIA_IMAGE_3)
+
+
+# ============================================================
+# NVIDIA KEY LIST
+# ============================================================
+
+def get_nvidia_image_keys():
+
+    return [
+        key
+        for key in [
+            NVIDIA_IMAGE_1,
+            NVIDIA_IMAGE_2,
+            NVIDIA_IMAGE_3,
+        ]
+        if key
+    ]
 
 
 # ============================================================
@@ -392,6 +423,7 @@ def is_telegram_configured():
 # ============================================================
 
 def get_config_status():
+
     return {
         "gemini": is_gemini_configured(),
         "gemini_2": is_gemini_2_configured(),
