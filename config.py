@@ -30,6 +30,10 @@ OPENROUTER_API_KEY = os.getenv(
     "OPENROUTER_API_KEY"
 )
 
+OPENROUTER_API_KEY_2 = os.getenv(
+    "OPENROUTER_API_KEY_2"
+)
+
 GROQ_API_KEY = os.getenv(
     "GROQ_API_KEY"
 )
@@ -59,6 +63,11 @@ GEMINI_MODEL_2 = os.getenv(
 
 OPENROUTER_MODEL = os.getenv(
     "OPENROUTER_MODEL",
+    "openrouter/free",
+)
+
+OPENROUTER_MODEL_2 = os.getenv(
+    "OPENROUTER_MODEL_2",
     "openrouter/free",
 )
 
@@ -122,6 +131,10 @@ GEMINI_URL_2 = (
 )
 
 OPENROUTER_URL = (
+    "https://openrouter.ai/api/v1/chat/completions"
+)
+
+OPENROUTER_URL_2 = (
     "https://openrouter.ai/api/v1/chat/completions"
 )
 
@@ -214,6 +227,10 @@ def is_openrouter_configured():
     return bool(OPENROUTER_API_KEY)
 
 
+def is_openrouter_2_configured():
+    return bool(OPENROUTER_API_KEY_2)
+
+
 def is_groq_configured():
     return bool(GROQ_API_KEY)
 
@@ -243,6 +260,7 @@ def get_config_status():
         "gemini": is_gemini_configured(),
         "gemini_2": is_gemini_2_configured(),
         "openrouter": is_openrouter_configured(),
+        "openrouter_2": is_openrouter_2_configured(),
         "groq": is_groq_configured(),
         "cerebras": is_cerebras_configured(),
         "mistral": is_mistral_configured(),
