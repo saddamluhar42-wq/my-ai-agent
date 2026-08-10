@@ -88,7 +88,7 @@ def render_sidebar():
 
         st.subheader("Settings")
 
-        provider = st.selectbox(
+        st.selectbox(
             "Preferred AI Provider",
             [
                 "Auto",
@@ -97,10 +97,6 @@ def render_sidebar():
             ],
             key="preferred_provider",
         )
-
-        st.session_state[
-            "preferred_provider"
-        ] = provider
 
         st.divider()
 
