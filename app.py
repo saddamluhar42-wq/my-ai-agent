@@ -39,8 +39,6 @@ GEMINI_URL = (
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 TAVILY_URL = "https://api.tavily.com/search"
 
-APP_NAME = "My AI Agent"
-
 
 # ============================================================
 # SESSION STATE
@@ -48,9 +46,6 @@ APP_NAME = "My AI Agent"
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-if "last_provider" not in st.session_state:
-    st.session_state.last_provider = None
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -67,13 +62,21 @@ if "database_initialized" not in st.session_state:
 if "database_error" not in st.session_state:
     st.session_state.database_error = None
 
+if "memory_loaded" not in st.session_state:
+    st.session_state.memory_loaded = False
+
+if "last_provider" not in st.session_state:
+    st.session_state.last_provider = None
+
 
 # ============================================================
-# PAGE HEADER
+# HEADER
 # ============================================================
 
 st.title("🤖 My AI Agent")
-st.caption("Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL")
+st.caption(
+    "Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL"
+)
 
 
 # ============================================================
@@ -85,16 +88,10 @@ def database_available():
 
 
 def database_query(query, params=None, fetch="none"):
-    """
-    Controlled PostgreSQL helper.
-
-    Application-defined SQL only.
-    The AI model never receives direct database credentials
-    and never executes arbitrary SQL.
-    """
-
     if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not configured.")
+        raise RuntimeError(
+            "DATABASE_URL is not configured."
+        )
 
     with psycopg.connect(
         DATABASE_URL,
@@ -102,7 +99,11 @@ def database_query(query, params=None, fetch="none"):
     ) as connection:
 
         with connection.cursor() as cursor:
-            cursor.execute(query, params or ())
+
+            cursor.execute(
+                query,
+                params or (),
+            )
 
             if fetch == "one":
                 return cursor.fetchone()
@@ -118,21 +119,11 @@ def database_query(query, params=None, fetch="none"):
 # ============================================================
 
 def initialize_database():
-    """
-    Creates the complete initial PostgreSQL schema.
-
-    This runs automatically from the Streamlit application,
-    so Render Shell is not required.
-    """
 
     if not database_available():
         return False
 
     statements = [
-
-        # ----------------------------------------------------
-        # USERS
-        # ----------------------------------------------------
 
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -143,10 +134,6 @@ def initialize_database():
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """,
-
-        # ----------------------------------------------------
-        # CONVERSATIONS
-        # ----------------------------------------------------
 
         """
         CREATE TABLE IF NOT EXISTS conversations (
@@ -160,10 +147,6 @@ def initialize_database():
         );
         """,
 
-        # ----------------------------------------------------
-        # MESSAGES
-        # ----------------------------------------------------
-
         """
         CREATE TABLE IF NOT EXISTS messages (
             id BIGSERIAL PRIMARY KEY,
@@ -176,10 +159,6 @@ def initialize_database():
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """,
-
-        # ----------------------------------------------------
-        # AGENT RUNS
-        # ----------------------------------------------------
 
         """
         CREATE TABLE IF NOT EXISTS agent_runs (
@@ -200,10 +179,6 @@ def initialize_database():
         );
         """,
 
-        # ----------------------------------------------------
-        # USER SETTINGS
-        # ----------------------------------------------------
-
         """
         CREATE TABLE IF NOT EXISTS user_settings (
             id BIGSERIAL PRIMARY KEY,
@@ -216,10 +191,6 @@ def initialize_database():
             UNIQUE(user_id, setting_key)
         );
         """,
-
-        # ----------------------------------------------------
-        # INDEXES
-        # ----------------------------------------------------
 
         """
         CREATE INDEX IF NOT EXISTS idx_conversations_user_id
@@ -258,26 +229,31 @@ def initialize_database():
 
 
 # ============================================================
-# DATABASE INITIALIZATION
+# INITIALIZE DATABASE
 # ============================================================
 
 def ensure_database_initialized():
+
     if st.session_state.database_initialized:
         return
 
     if not database_available():
+
         st.session_state.database_error = (
             "DATABASE_URL is not configured."
         )
+
         return
 
     try:
+
         initialize_database()
 
         st.session_state.database_initialized = True
         st.session_state.database_error = None
 
     except Exception as error:
+
         st.session_state.database_error = str(error)
 
 
@@ -285,21 +261,22 @@ ensure_database_initialized()
 
 
 # ============================================================
-# USER / CONVERSATION INITIALIZATION
+# USER
 # ============================================================
 
 def get_or_create_user():
-    """
-    Creates an anonymous application user for the current
-    Streamlit session.
-
-    Later this can be replaced by real authentication.
-    """
 
     if not database_available():
         return None
 
-    external_id = st.session_state.session_id
+    # --------------------------------------------------------
+    # TEMPORARY SINGLE-USER MODE
+    #
+    # This makes PostgreSQL memory survive Streamlit refreshes.
+    # Real authentication will replace this later.
+    # --------------------------------------------------------
+
+    external_id = "default-user"
 
     row = database_query(
         """
@@ -325,7 +302,7 @@ def get_or_create_user():
         """,
         (
             external_id,
-            "Anonymous User",
+            "Default User",
         ),
         fetch="one",
     )
@@ -333,7 +310,35 @@ def get_or_create_user():
     return row[0]
 
 
+# ============================================================
+# CONVERSATION
+# ============================================================
+
+def get_latest_conversation(user_id):
+
+    if not user_id:
+        return None
+
+    row = database_query(
+        """
+        SELECT id
+        FROM conversations
+        WHERE user_id = %s
+        ORDER BY updated_at DESC
+        LIMIT 1;
+        """,
+        (user_id,),
+        fetch="one",
+    )
+
+    if row:
+        return row[0]
+
+    return None
+
+
 def create_conversation(user_id):
+
     if not user_id:
         return None
 
@@ -348,7 +353,7 @@ def create_conversation(user_id):
         """,
         (
             user_id,
-            "New Conversation",
+            "My AI Agent Conversation",
         ),
         fetch="one",
     )
@@ -356,31 +361,95 @@ def create_conversation(user_id):
     return row[0]
 
 
-def ensure_user_and_conversation():
-    if not database_available():
-        return
+# ============================================================
+# LOAD SAVED MESSAGES
+# ============================================================
 
-    if st.session_state.user_id is None:
-        st.session_state.user_id = get_or_create_user()
+def load_conversation_messages(conversation_id):
 
-    if st.session_state.conversation_id is None:
-        st.session_state.conversation_id = create_conversation(
-            st.session_state.user_id
+    if not conversation_id:
+        return []
+
+    rows = database_query(
+        """
+        SELECT
+            role,
+            content,
+            provider
+        FROM messages
+        WHERE conversation_id = %s
+        ORDER BY created_at ASC, id ASC;
+        """,
+        (conversation_id,),
+        fetch="all",
+    )
+
+    loaded_messages = []
+
+    for row in rows:
+
+        loaded_messages.append(
+            {
+                "role": row[0],
+                "content": row[1],
+                "provider": row[2],
+            }
         )
 
-
-if (
-    st.session_state.database_initialized
-    and st.session_state.user_id is None
-):
-    try:
-        ensure_user_and_conversation()
-    except Exception as error:
-        st.session_state.database_error = str(error)
+    return loaded_messages
 
 
 # ============================================================
-# DATABASE MESSAGE STORAGE
+# LOAD PERSISTENT MEMORY
+# ============================================================
+
+def load_persistent_memory():
+
+    if st.session_state.memory_loaded:
+        return
+
+    if not st.session_state.database_initialized:
+        return
+
+    try:
+
+        st.session_state.user_id = (
+            get_or_create_user()
+        )
+
+        st.session_state.conversation_id = (
+            get_latest_conversation(
+                st.session_state.user_id
+            )
+        )
+
+        if not st.session_state.conversation_id:
+
+            st.session_state.conversation_id = (
+                create_conversation(
+                    st.session_state.user_id
+                )
+            )
+
+        saved_messages = (
+            load_conversation_messages(
+                st.session_state.conversation_id
+            )
+        )
+
+        st.session_state.messages = saved_messages
+        st.session_state.memory_loaded = True
+
+    except Exception as error:
+
+        st.session_state.database_error = str(error)
+
+
+load_persistent_memory()
+
+
+# ============================================================
+# SAVE MESSAGE
 # ============================================================
 
 def save_message(
@@ -389,6 +458,7 @@ def save_message(
     content,
     provider=None,
 ):
+
     if not conversation_id:
         return None
 
@@ -425,7 +495,7 @@ def save_message(
 
 
 # ============================================================
-# AGENT RUN TRACKING
+# AGENT RUNS
 # ============================================================
 
 def start_agent_run(
@@ -433,6 +503,7 @@ def start_agent_run(
     provider,
     model,
 ):
+
     if not conversation_id:
         return None
 
@@ -455,7 +526,7 @@ def start_agent_run(
             "running",
             json.dumps(
                 {
-                    "application": APP_NAME,
+                    "application": "My AI Agent",
                 }
             ),
         ),
@@ -471,6 +542,7 @@ def finish_agent_run(
     message_id=None,
     error_message=None,
 ):
+
     if not run_id:
         return
 
@@ -494,19 +566,20 @@ def finish_agent_run(
 
 
 # ============================================================
-# DATABASE HEALTH
+# DATABASE TEST
 # ============================================================
 
 def test_database_connection():
+
     row = database_query(
         "SELECT 1;",
         fetch="one",
     )
 
     if not row or row[0] != 1:
+
         raise RuntimeError(
-            "PostgreSQL connection test returned "
-            "an unexpected result."
+            "PostgreSQL connection test failed."
         )
 
     return {
@@ -516,6 +589,7 @@ def test_database_connection():
 
 
 def get_database_info():
+
     row = database_query(
         """
         SELECT
@@ -534,6 +608,7 @@ def get_database_info():
 
 
 def list_database_tables():
+
     rows = database_query(
         """
         SELECT
@@ -560,86 +635,50 @@ def list_database_tables():
 
 
 # ============================================================
-# DATABASE COMMAND DETECTION
+# DATABASE COMMAND
 # ============================================================
 
 def detect_database_command(user_input):
+
     text = user_input.lower().strip()
 
-    database_words = [
-        "database",
-        "postgres",
-        "postgresql",
-        "db connection",
-        "db connect",
-        "db test",
-        "database connection",
-        "database test",
-        "sql connection",
-        "tables",
-        "table",
-        "schema",
-        "database info",
-        "database information",
-    ]
-
-    if not any(
-        word in text
-        for word in database_words
-    ):
-        return None
-
-    if any(
-        phrase in text
-        for phrase in [
-            "connection",
-            "connect",
-            "test",
-            "health",
-            "working",
-            "status",
-        ]
-    ):
-        return "test_connection"
-
-    if any(
-        phrase in text
-        for phrase in [
-            "table",
-            "tables",
-            "schema",
-            "schemas",
-        ]
-    ):
+    if "list database tables" in text:
         return "list_tables"
 
-    if any(
-        phrase in text
-        for phrase in [
-            "info",
-            "information",
-            "version",
-            "details",
-        ]
+    if (
+        "database info" in text
+        or "database information" in text
     ):
         return "database_info"
 
-    return "test_connection"
+    if (
+        "test database connection" in text
+        or "database connection" in text
+        or "test database" in text
+        or "postgres connection" in text
+        or "postgresql connection" in text
+    ):
+        return "test_connection"
+
+    return None
 
 
 def run_database_tool(user_input):
-    command = detect_database_command(user_input)
+
+    command = detect_database_command(
+        user_input
+    )
 
     if not command:
         return None
 
     if not database_available():
+
         return {
             "tool": "PostgreSQL",
             "status": "not_configured",
             "message": (
-                "DATABASE_URL is not configured "
-                "in the environment."
+                "DATABASE_URL is not configured."
             ),
         }
 
@@ -667,7 +706,7 @@ def run_database_tool(user_input):
 
             result = {
                 "status": "error",
-                "message": "Unknown database tool command.",
+                "message": "Unknown command.",
             }
 
         return {
@@ -685,7 +724,7 @@ def run_database_tool(user_input):
 
 
 # ============================================================
-# TAVILY WEB SEARCH
+# TAVILY
 # ============================================================
 
 def search_web(query):
@@ -703,7 +742,9 @@ def search_web(query):
         "max_results": 5,
     }
 
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(payload).encode(
+        "utf-8"
+    )
 
     request = urllib.request.Request(
         TAVILY_URL,
@@ -727,57 +768,60 @@ def search_web(query):
                 .decode("utf-8")
             )
 
-        result = json.loads(response_data)
+        result = json.loads(
+            response_data
+        )
 
-        answer = result.get("answer", "")
-        results = result.get("results", [])
+        answer = result.get(
+            "answer",
+            "",
+        )
+
+        results = result.get(
+            "results",
+            [],
+        )
 
         sources = []
 
         for item in results:
 
-            title = item.get("title", "")
-            content = item.get("content", "")
-            url = item.get("url", "")
-
             sources.append(
-                f"TITLE: {title}\n"
-                f"URL: {url}\n"
-                f"CONTENT: {content}"
+                "TITLE: "
+                + item.get("title", "")
+                + "\nURL: "
+                + item.get("url", "")
+                + "\nCONTENT: "
+                + item.get("content", "")
             )
 
-        web_context = "\n\n".join(sources)
-
-        return answer, web_context
+        return (
+            answer,
+            "\n\n".join(sources),
+        )
 
     except urllib.error.HTTPError as error:
 
-        error_body = error.read().decode(
+        body = error.read().decode(
             "utf-8",
             errors="ignore",
         )
 
         raise RuntimeError(
             f"Tavily HTTP {error.code}: "
-            f"{error_body[:500]}"
-        )
-
-    except urllib.error.URLError as error:
-
-        raise RuntimeError(
-            f"Tavily connection error: {error.reason}"
+            f"{body[:500]}"
         )
 
 
 # ============================================================
-# GEMINI REST API
+# GEMINI
 # ============================================================
 
 def ask_gemini(prompt):
 
     if not GEMINI_API_KEY:
         raise RuntimeError(
-            "Gemini API key is not configured."
+            "GEMINI_API_KEY is not configured."
         )
 
     payload = {
@@ -797,15 +841,12 @@ def ask_gemini(prompt):
         },
     }
 
-    data = json.dumps(payload).encode("utf-8")
-
-    url = (
-        f"{GEMINI_URL}"
-        f"?key={GEMINI_API_KEY}"
+    data = json.dumps(payload).encode(
+        "utf-8"
     )
 
     request = urllib.request.Request(
-        url,
+        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
         data=data,
         headers={
             "Content-Type": "application/json",
@@ -826,7 +867,9 @@ def ask_gemini(prompt):
                 .decode("utf-8")
             )
 
-        result = json.loads(response_data)
+        result = json.loads(
+            response_data
+        )
 
         candidates = result.get(
             "candidates",
@@ -844,20 +887,13 @@ def ask_gemini(prompt):
             .get("parts", [])
         )
 
-        answer_parts = []
-
-        for part in parts:
-
-            text = part.get("text")
-
-            if text:
-                answer_parts.append(text)
-
         answer = "".join(
-            answer_parts
+            part.get("text", "")
+            for part in parts
         ).strip()
 
         if not answer:
+
             raise RuntimeError(
                 "Gemini returned an empty response."
             )
@@ -866,20 +902,14 @@ def ask_gemini(prompt):
 
     except urllib.error.HTTPError as error:
 
-        error_body = error.read().decode(
+        body = error.read().decode(
             "utf-8",
             errors="ignore",
         )
 
         raise RuntimeError(
             f"Gemini HTTP {error.code}: "
-            f"{error_body[:500]}"
-        )
-
-    except urllib.error.URLError as error:
-
-        raise RuntimeError(
-            f"Gemini connection error: {error.reason}"
+            f"{body[:500]}"
         )
 
 
@@ -891,7 +921,7 @@ def ask_openrouter(prompt):
 
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
-            "OpenRouter API key is not configured."
+            "OPENROUTER_API_KEY is not configured."
         )
 
     payload = {
@@ -904,7 +934,9 @@ def ask_openrouter(prompt):
         ],
     }
 
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(payload).encode(
+        "utf-8"
+    )
 
     request = urllib.request.Request(
         OPENROUTER_URL,
@@ -935,7 +967,9 @@ def ask_openrouter(prompt):
                 .decode("utf-8")
             )
 
-        result = json.loads(response_data)
+        result = json.loads(
+            response_data
+        )
 
         choices = result.get(
             "choices",
@@ -947,39 +981,29 @@ def ask_openrouter(prompt):
                 "OpenRouter returned no choices."
             )
 
-        message = choices[0].get(
-            "message",
-            {},
-        )
-
-        answer = message.get(
-            "content",
-            "",
+        answer = (
+            choices[0]
+            .get("message", {})
+            .get("content", "")
         )
 
         if not answer:
             raise RuntimeError(
-                "OpenRouter returned an empty response."
+                "OpenRouter returned empty response."
             )
 
         return answer
 
     except urllib.error.HTTPError as error:
 
-        error_body = error.read().decode(
+        body = error.read().decode(
             "utf-8",
             errors="ignore",
         )
 
         raise RuntimeError(
             f"OpenRouter HTTP {error.code}: "
-            f"{error_body[:500]}"
-        )
-
-    except urllib.error.URLError as error:
-
-        raise RuntimeError(
-            f"OpenRouter connection error: {error.reason}"
+            f"{body[:500]}"
         )
 
 
@@ -990,20 +1014,13 @@ def ask_openrouter(prompt):
 def ask_ai(prompt):
 
     gemini_error = None
-    openrouter_error = None
-
-    # --------------------------------------------------------
-    # GEMINI FIRST
-    # --------------------------------------------------------
 
     if GEMINI_API_KEY:
 
         try:
 
-            answer = ask_gemini(prompt)
-
             return (
-                answer,
+                ask_gemini(prompt),
                 "Gemini",
                 GEMINI_MODEL,
             )
@@ -1012,93 +1029,69 @@ def ask_ai(prompt):
 
             gemini_error = str(error)
 
-    # --------------------------------------------------------
-    # OPENROUTER FALLBACK
-    # --------------------------------------------------------
-
     if OPENROUTER_API_KEY:
 
         try:
 
-            answer = ask_openrouter(prompt)
-
             return (
-                answer,
+                ask_openrouter(prompt),
                 "OpenRouter",
                 OPENROUTER_MODEL,
             )
 
         except Exception as error:
 
-            openrouter_error = str(error)
-
-    # --------------------------------------------------------
-    # BOTH FAILED
-    # --------------------------------------------------------
-
-    errors = []
-
-    if gemini_error:
-
-        errors.append(
-            f"Gemini: {gemini_error}"
-        )
-
-    if openrouter_error:
-
-        errors.append(
-            f"OpenRouter: {openrouter_error}"
-        )
-
-    if not errors:
-
-        raise RuntimeError(
-            "Neither GEMINI_API_KEY nor "
-            "OPENROUTER_API_KEY is configured."
-        )
+            raise RuntimeError(
+                "Gemini failed: "
+                f"{gemini_error or 'unknown error'}\n\n"
+                "OpenRouter failed: "
+                f"{error}"
+            )
 
     raise RuntimeError(
-        " | ".join(errors)
+        "No AI provider is configured."
     )
 
 
 # ============================================================
-# BUILD MEMORY
+# MEMORY BUILDER
 # ============================================================
 
 def build_memory():
 
     if not st.session_state.messages:
+
         return "No previous conversation."
 
-    memory_parts = []
+    parts = []
 
     for message in st.session_state.messages:
 
         role = message["role"].upper()
+
         content = message["content"]
 
-        memory_parts.append(
+        parts.append(
             f"{role}: {content}"
         )
 
-    return "\n\n".join(memory_parts)
+    return "\n\n".join(parts)
 
 
 # ============================================================
-# SHOW DATABASE STATUS
+# DATABASE STATUS
 # ============================================================
 
 if st.session_state.database_error:
 
     st.warning(
-        "PostgreSQL initialization issue: "
-        f"{st.session_state.database_error}"
+        "PostgreSQL issue: "
+        + st.session_state.database_error
     )
 
 
 # ============================================================
-# SHOW CHAT HISTORY
+# DISPLAY SAVED CHAT
 # ============================================================
 
 for message in st.session_state.messages:
@@ -1134,13 +1127,13 @@ user_input = st.chat_input(
 
 
 # ============================================================
-# PROCESS USER MESSAGE
+# PROCESS MESSAGE
 # ============================================================
 
 if user_input:
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE TO SESSION
+    # USER MESSAGE
     # --------------------------------------------------------
 
     st.session_state.messages.append(
@@ -1150,61 +1143,44 @@ if user_input:
         }
     )
 
-    # --------------------------------------------------------
-    # SHOW USER MESSAGE
-    # --------------------------------------------------------
-
     with st.chat_message("user"):
 
         st.markdown(user_input)
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE TO POSTGRESQL
+    # SAVE USER MESSAGE
     # --------------------------------------------------------
 
-    user_message_id = None
+    try:
 
-    if (
-        st.session_state.database_initialized
-        and st.session_state.conversation_id
-    ):
+        save_message(
+            conversation_id=(
+                st.session_state.conversation_id
+            ),
+            role="user",
+            content=user_input,
+        )
 
-        try:
+    except Exception as error:
 
-            user_message_id = save_message(
-                conversation_id=(
-                    st.session_state.conversation_id
-                ),
-                role="user",
-                content=user_input,
-            )
-
-        except Exception as error:
-
-            st.session_state.database_error = str(
-                error
-            )
-
-    # --------------------------------------------------------
-    # BUILD MEMORY
-    # --------------------------------------------------------
-
-    conversation = build_memory()
+        st.session_state.database_error = str(
+            error
+        )
 
     # --------------------------------------------------------
     # DATABASE TOOL
     # --------------------------------------------------------
 
-    database_context = ""
-
     database_result = run_database_tool(
         user_input
     )
 
-    if database_result is not None:
+    database_context = ""
+
+    if database_result:
 
         database_context = (
-            "POSTGRESQL DATABASE TOOL RESULT:\n"
+            "POSTGRESQL TOOL RESULT:\n"
             + json.dumps(
                 database_result,
                 indent=2,
@@ -1213,7 +1189,7 @@ if user_input:
         )
 
     # --------------------------------------------------------
-    # WEB SEARCH DETECTION
+    # WEB SEARCH
     # --------------------------------------------------------
 
     search_words = [
@@ -1224,14 +1200,11 @@ if user_input:
         "recent",
         "abhi",
         "aaj",
-        "latest update",
-        "price",
-        "weather",
         "search",
         "internet",
         "online",
-        "who is",
-        "what happened",
+        "price",
+        "weather",
     ]
 
     should_search = any(
@@ -1240,10 +1213,6 @@ if user_input:
     )
 
     web_context = ""
-
-    # --------------------------------------------------------
-    # OPTIONAL WEB SEARCH
-    # --------------------------------------------------------
 
     if (
         should_search
@@ -1258,79 +1227,64 @@ if user_input:
 
                 (
                     search_answer,
-                    search_results,
+                    search_sources,
                 ) = search_web(
                     user_input
                 )
 
             web_context = (
                 "WEB SEARCH ANSWER:\n"
-                f"{search_answer}\n\n"
-                "WEB SOURCES:\n"
-                f"{search_results}"
+                + search_answer
+                + "\n\nWEB SOURCES:\n"
+                + search_sources
             )
 
         except Exception:
 
             web_context = (
-                "Web search failed. "
-                "Answer using available knowledge."
+                "Web search failed."
             )
 
     # --------------------------------------------------------
-    # AI PROMPT
+    # PROMPT
     # --------------------------------------------------------
 
     prompt = f"""
-You are my personal AI Agent.
+You are My AI Agent.
 
-Your job is to:
+Answer the user's latest request clearly and accurately.
 
-- Understand the user's command.
-- Give clear and useful answers.
-- Think carefully before answering.
-- Ask for clarification only when genuinely necessary.
-- Never reveal API keys, passwords, tokens, or system secrets.
-- Maintain conversation context.
-- Answer in the user's language when appropriate.
-- Do not invent current information.
-- If web search information is provided, use it for current/fresh information.
-- If PostgreSQL database tool information is provided, use the actual tool result.
-- Never claim that you personally executed a database operation unless a PostgreSQL
-  tool result is provided below.
-- Keep answers practical and easy to understand.
+Rules:
 
-DATABASE TOOL RULES:
-
-- PostgreSQL is connected through the server-side DATABASE_URL environment variable.
-- Database operations are performed by the application, not by Gemini directly.
-- Do not invent database results.
-- Do not invent tables, rows, versions, or connection status.
-- If the database tool result says connected, clearly report that.
-- If the database tool result says error, clearly report the error without exposing secrets.
-- Never request or reveal the DATABASE_URL itself.
-
-IMPORTANT:
-
-You have access to conversation memory below.
+1. Use conversation memory when relevant.
+2. Never invent database results.
+3. Never expose API keys or secrets.
+4. PostgreSQL operations are performed by the application.
+5. Use PostgreSQL tool results when available.
+6. Use web-search context when available.
+7. Do not claim to remember something unless it exists
+   in the supplied conversation memory.
+8. Answer in the user's language when appropriate.
 
 CONVERSATION MEMORY:
-{conversation}
 
-POSTGRESQL DATABASE CONTEXT:
+{build_memory()}
+
+POSTGRESQL CONTEXT:
+
 {database_context}
 
 WEB SEARCH CONTEXT:
+
 {web_context}
 
 LATEST USER REQUEST:
-{user_input}
 
-Respond directly to the latest user request.
+{user_input}
 """
 
     # --------------------------------------------------------
-    # GENERATE RESPONSE
+    # AI RESPONSE
     # --------------------------------------------------------
 
     with st.chat_message("assistant"):
@@ -1338,52 +1292,34 @@ Respond directly to the latest user request.
         with st.spinner("Thinking..."):
 
             run_id = None
-            assistant_message_id = None
 
             try:
 
-                # ------------------------------------------------
-                # AI RESPONSE
-                # ------------------------------------------------
-
-                (
-                    answer,
-                    provider,
-                    model,
-                ) = ask_ai(
+                answer, provider, model = ask_ai(
                     prompt
                 )
 
-                # ------------------------------------------------
-                # START AGENT RUN RECORD
-                # ------------------------------------------------
+                # --------------------------------------------
+                # AGENT RUN
+                # --------------------------------------------
 
-                if (
-                    st.session_state.database_initialized
-                    and st.session_state.conversation_id
-                ):
+                try:
 
-                    try:
+                    run_id = start_agent_run(
+                        conversation_id=(
+                            st.session_state.conversation_id
+                        ),
+                        provider=provider,
+                        model=model,
+                    )
 
-                        run_id = start_agent_run(
-                            conversation_id=(
-                                st.session_state.conversation_id
-                            ),
-                            provider=provider,
-                            model=model,
-                        )
+                except Exception:
 
-                    except Exception as error:
+                    run_id = None
 
-                        st.session_state.database_error = str(
-                            error
-                        )
-
-                # ------------------------------------------------
-                # DISPLAY RESPONSE
-                # ------------------------------------------------
-
-                st.markdown(answer)
+                # --------------------------------------------
+                # PROVIDER
+                # --------------------------------------------
 
                 provider_parts = [
                     provider
@@ -1395,7 +1331,7 @@ Respond directly to the latest user request.
                         "Tavily Web Search"
                     )
 
-                if database_result is not None:
+                if database_result:
 
                     provider_parts.append(
                         "PostgreSQL"
@@ -1405,13 +1341,19 @@ Respond directly to the latest user request.
                     provider_parts
                 )
 
+                # --------------------------------------------
+                # DISPLAY
+                # --------------------------------------------
+
+                st.markdown(answer)
+
                 st.caption(
                     f"Powered by {provider_text}"
                 )
 
-                # ------------------------------------------------
-                # SAVE ASSISTANT RESPONSE TO SESSION
-                # ------------------------------------------------
+                # --------------------------------------------
+                # SESSION MEMORY
+                # --------------------------------------------
 
                 st.session_state.messages.append(
                     {
@@ -1425,37 +1367,34 @@ Respond directly to the latest user request.
                     provider_text
                 )
 
-                # ------------------------------------------------
-                # SAVE ASSISTANT RESPONSE TO DATABASE
-                # ------------------------------------------------
+                # --------------------------------------------
+                # DATABASE MEMORY
+                # --------------------------------------------
 
-                if (
-                    st.session_state.database_initialized
-                    and st.session_state.conversation_id
-                ):
+                assistant_message_id = None
 
-                    try:
+                try:
 
-                        assistant_message_id = (
-                            save_message(
-                                conversation_id=(
-                                    st.session_state.conversation_id
-                                ),
-                                role="assistant",
-                                content=answer,
-                                provider=provider_text,
-                            )
+                    assistant_message_id = (
+                        save_message(
+                            conversation_id=(
+                                st.session_state.conversation_id
+                            ),
+                            role="assistant",
+                            content=answer,
+                            provider=provider_text,
                         )
+                    )
 
-                    except Exception as error:
+                except Exception as error:
 
-                        st.session_state.database_error = str(
-                            error
-                        )
+                    st.session_state.database_error = str(
+                        error
+                    )
 
-                # ------------------------------------------------
-                # FINISH AGENT RUN
-                # ------------------------------------------------
+                # --------------------------------------------
+                # FINISH RUN
+                # --------------------------------------------
 
                 if run_id:
 
@@ -1469,17 +1408,18 @@ Respond directly to the latest user request.
                             ),
                         )
 
-                    except Exception as error:
-
-                        st.session_state.database_error = str(
-                            error
-                        )
+                    except Exception:
+                        pass
 
             except Exception as error:
 
-                # ------------------------------------------------
-                # AGENT RUN FAILURE
-                # ------------------------------------------------
+                st.error(
+                    "AI service temporarily unavailable."
+                )
+
+                st.caption(
+                    str(error)
+                )
 
                 if run_id:
 
@@ -1495,11 +1435,3 @@ Respond directly to the latest user request.
 
                     except Exception:
                         pass
-
-                st.error(
-                    "AI service temporarily unavailable."
-                )
-
-                st.caption(
-                    str(error)
-                )
