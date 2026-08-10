@@ -1,6 +1,3 @@
 streamlit
-openai
-tavily-python
-requests
 psycopg[binary]
-google-genai
+huggingface_hub
