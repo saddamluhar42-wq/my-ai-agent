@@ -4,6 +4,7 @@ from ai import gemini
 from ai import groq
 from ai import huggingface
 from ai import mistral
+from ai import nvidia
 from ai import openrouter
 
 
@@ -36,63 +37,137 @@ def get_available_providers():
 
 
 def is_image_generation_available():
-    return huggingface.is_configured()
+    return (
+        nvidia.is_configured()
+        or huggingface.is_configured()
+    )
 
 
 def generate_image(
     prompt,
 ):
     """
-    Generate an image using Hugging Face.
+    Generate an image using the configured image
+    providers.
+
+    Provider priority:
+
+    1. NVIDIA
+    2. Hugging Face
+
+    Each provider has its own API-key fallback system.
 
     IMPORTANT:
-    This function must only be called after
-    the user has explicitly confirmed image generation.
+    This function must only be called after the user
+    explicitly confirms image generation.
     """
-
-    if not huggingface.is_configured():
-        raise AgentError(
-            "Hugging Face image generation is not configured."
-        )
 
     if not prompt or not prompt.strip():
         raise AgentError(
             "Image prompt cannot be empty."
         )
 
-    try:
-        image_bytes = huggingface.generate_image_bytes(
-            prompt=prompt.strip(),
+    if not is_image_generation_available():
+        raise AgentError(
+            "No image-generation provider is configured."
         )
 
-        if not image_bytes:
-            raise AgentError(
-                "Hugging Face returned an empty image."
+    errors = []
+
+    # ========================================================
+    # NVIDIA
+    # ========================================================
+
+    if nvidia.is_configured():
+
+        try:
+            image_bytes = (
+                nvidia.generate_image_bytes(
+                    prompt=prompt.strip(),
+                )
             )
 
-        provider_info = (
-            huggingface.get_provider_info()
+            if not image_bytes:
+                raise AgentError(
+                    "NVIDIA returned an empty image."
+                )
+
+            provider_info = (
+                nvidia.get_provider_info()
+            )
+
+            return {
+                "image": image_bytes,
+                "provider": provider_info[
+                    "provider"
+                ],
+                "model": provider_info[
+                    "model"
+                ],
+                "type": "image",
+            }
+
+        except Exception as error:
+            errors.append(
+                f"NVIDIA: {error}"
+            )
+
+    else:
+        errors.append(
+            "NVIDIA: API keys not configured."
         )
 
-        return {
-            "image": image_bytes,
-            "provider": provider_info[
-                "provider"
-            ],
-            "model": provider_info[
-                "model"
-            ],
-            "type": "image",
-        }
+    # ========================================================
+    # HUGGING FACE
+    # ========================================================
 
-    except AgentError:
-        raise
+    if huggingface.is_configured():
 
-    except Exception as error:
-        raise AgentError(
-            f"Hugging Face image generation failed: "
-            f"{error}"
-        ) from error
+        try:
+            image_bytes = (
+                huggingface.generate_image_bytes(
+                    prompt=prompt.strip(),
+                )
+            )
+
+            if not image_bytes:
+                raise AgentError(
+                    "Hugging Face returned an empty image."
+                )
+
+            provider_info = (
+                huggingface.get_provider_info()
+            )
+
+            return {
+                "image": image_bytes,
+                "provider": provider_info[
+                    "provider"
+                ],
+                "model": provider_info[
+                    "model"
+                ],
+                "type": "image",
+            }
+
+        except Exception as error:
+            errors.append(
+                f"Hugging Face: {error}"
+            )
+
+    else:
+        errors.append(
+            "Hugging Face: API keys not configured."
+        )
+
+    # ========================================================
+    # ALL IMAGE PROVIDERS FAILED
+    # ========================================================
+
+    raise AgentError(
+        "All image providers failed.\n"
+        + "\n".join(errors)
+    )
 
 
 def generate(
@@ -105,6 +180,7 @@ def generate(
     Generate an AI text response.
 
     Provider priority:
+
     1. Explicitly requested provider
     2. Gemini
     3. OpenRouter
@@ -115,13 +191,17 @@ def generate(
 
     Image generation is NOT triggered here.
     Image generation requires an explicit confirmation
-    followed by a separate generate_image() call.
+    followed by generate_image().
     """
 
     providers = []
 
     if preferred_provider:
-        provider = preferred_provider.lower().strip()
+        provider = (
+            preferred_provider
+            .lower()
+            .strip()
+        )
 
         if provider == "gemini":
             providers.append("Gemini")
@@ -166,6 +246,10 @@ def generate(
 
     for provider in providers:
 
+        # ====================================================
+        # GEMINI
+        # ====================================================
+
         if provider == "Gemini":
 
             if not gemini.is_configured():
@@ -184,9 +268,11 @@ def generate(
                 return {
                     "answer": answer,
                     "provider": "Gemini",
-                    "model": gemini.get_provider_info()[
-                        "model"
-                    ],
+                    "model": (
+                        gemini.get_provider_info()[
+                            "model"
+                        ]
+                    ),
                     "type": "text",
                 }
 
@@ -194,6 +280,10 @@ def generate(
                 errors.append(
                     f"Gemini: {error}"
                 )
+
+        # ====================================================
+        # OPENROUTER
+        # ====================================================
 
         elif provider == "OpenRouter":
 
@@ -222,6 +312,10 @@ def generate(
                     f"OpenRouter: {error}"
                 )
 
+        # ====================================================
+        # GROQ
+        # ====================================================
+
         elif provider == "Groq":
 
             if not groq.is_configured():
@@ -240,9 +334,11 @@ def generate(
                 return {
                     "answer": answer,
                     "provider": "Groq",
-                    "model": groq.get_provider_info()[
-                        "model"
-                    ],
+                    "model": (
+                        groq.get_provider_info()[
+                            "model"
+                        ]
+                    ),
                     "type": "text",
                 }
 
@@ -250,6 +346,10 @@ def generate(
                 errors.append(
                     f"Groq: {error}"
                 )
+
+        # ====================================================
+        # CEREBRAS
+        # ====================================================
 
         elif provider == "Cerebras":
 
@@ -269,9 +369,11 @@ def generate(
                 return {
                     "answer": answer,
                     "provider": "Cerebras",
-                    "model": cerebras.get_provider_info()[
-                        "model"
-                    ],
+                    "model": (
+                        cerebras.get_provider_info()[
+                            "model"
+                        ]
+                    ),
                     "type": "text",
                 }
 
@@ -279,6 +381,10 @@ def generate(
                 errors.append(
                     f"Cerebras: {error}"
                 )
+
+        # ====================================================
+        # MISTRAL
+        # ====================================================
 
         elif provider == "Mistral":
 
@@ -298,9 +404,11 @@ def generate(
                 return {
                     "answer": answer,
                     "provider": "Mistral",
-                    "model": mistral.get_provider_info()[
-                        "model"
-                    ],
+                    "model": (
+                        mistral.get_provider_info()[
+                            "model"
+                        ]
+                    ),
                     "type": "text",
                 }
 
@@ -308,6 +416,10 @@ def generate(
                 errors.append(
                     f"Mistral: {error}"
                 )
+
+        # ====================================================
+        # ANTHROPIC
+        # ====================================================
 
         elif provider == "Anthropic":
 
@@ -336,6 +448,10 @@ def generate(
                     f"Anthropic: {error}"
                 )
 
+    # ========================================================
+    # ALL TEXT PROVIDERS FAILED
+    # ========================================================
+
     if not errors:
         raise AgentError(
             "No AI provider is configured."
@@ -361,12 +477,27 @@ def generate_text(
 
 def provider_status():
     return {
-        "Gemini": gemini.is_configured(),
-        "OpenRouter": openrouter.is_configured(),
-        "Groq": groq.is_configured(),
-        "Cerebras": cerebras.is_configured(),
-        "Mistral": mistral.is_configured(),
-        "Anthropic": anthropic.is_configured(),
+        "Gemini": (
+            gemini.is_configured()
+        ),
+        "OpenRouter": (
+            openrouter.is_configured()
+        ),
+        "Groq": (
+            groq.is_configured()
+        ),
+        "Cerebras": (
+            cerebras.is_configured()
+        ),
+        "Mistral": (
+            mistral.is_configured()
+        ),
+        "Anthropic": (
+            anthropic.is_configured()
+        ),
+        "NVIDIA Image": (
+            nvidia.is_configured()
+        ),
         "Hugging Face Image": (
             huggingface.is_configured()
         ),
