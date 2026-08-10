@@ -46,6 +46,18 @@ MISTRAL_API_KEY = os.getenv(
     "MISTRAL_API_KEY"
 )
 
+ANTHROPIC_API_KEY = os.getenv(
+    "ANTHROPIC_API_KEY"
+)
+
+ANTHROPIC_API_KEY_2 = os.getenv(
+    "ANTHROPIC_API_KEY_2"
+)
+
+ANTHROPIC_API_KEY_3 = os.getenv(
+    "ANTHROPIC_API_KEY_3"
+)
+
 
 # ============================================================
 # AI MODELS
@@ -84,6 +96,11 @@ CEREBRAS_MODEL = os.getenv(
 MISTRAL_MODEL = os.getenv(
     "MISTRAL_MODEL",
     "mistral-small-latest",
+)
+
+ANTHROPIC_MODEL = os.getenv(
+    "ANTHROPIC_MODEL",
+    "claude-3-5-haiku-latest",
 )
 
 
@@ -148,6 +165,10 @@ CEREBRAS_URL = (
 
 MISTRAL_URL = (
     "https://api.mistral.ai/v1/chat/completions"
+)
+
+ANTHROPIC_URL = (
+    "https://api.anthropic.com/v1/messages"
 )
 
 TAVILY_URL = (
@@ -243,6 +264,14 @@ def is_mistral_configured():
     return bool(MISTRAL_API_KEY)
 
 
+def is_anthropic_configured():
+    return bool(
+        ANTHROPIC_API_KEY
+        or ANTHROPIC_API_KEY_2
+        or ANTHROPIC_API_KEY_3
+    )
+
+
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
 
@@ -264,6 +293,7 @@ def get_config_status():
         "groq": is_groq_configured(),
         "cerebras": is_cerebras_configured(),
         "mistral": is_mistral_configured(),
+        "anthropic": is_anthropic_configured(),
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
