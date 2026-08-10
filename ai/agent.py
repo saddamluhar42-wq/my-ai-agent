@@ -1,4 +1,5 @@
 from ai import gemini
+from ai import groq
 from ai import openrouter
 
 
@@ -14,6 +15,9 @@ def get_available_providers():
 
     if openrouter.is_configured():
         providers.append("OpenRouter")
+
+    if groq.is_configured():
+        providers.append("Groq")
 
     return providers
 
@@ -31,6 +35,7 @@ def generate(
     1. Explicitly requested provider
     2. Gemini
     3. OpenRouter
+    4. Groq
     """
 
     providers = []
@@ -44,11 +49,17 @@ def generate(
         elif provider == "openrouter":
             providers.append("OpenRouter")
 
+        elif provider == "groq":
+            providers.append("Groq")
+
     if "Gemini" not in providers:
         providers.append("Gemini")
 
     if "OpenRouter" not in providers:
         providers.append("OpenRouter")
+
+    if "Groq" not in providers:
+        providers.append("Groq")
 
     errors = []
 
@@ -110,6 +121,34 @@ def generate(
                     f"OpenRouter: {error}"
                 )
 
+        elif provider == "Groq":
+
+            if not groq.is_configured():
+                errors.append(
+                    "Groq: API key not configured."
+                )
+                continue
+
+            try:
+                answer = groq.generate(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+                return {
+                    "answer": answer,
+                    "provider": "Groq",
+                    "model": groq.get_provider_info()[
+                        "model"
+                    ],
+                }
+
+            except Exception as error:
+                errors.append(
+                    f"Groq: {error}"
+                )
+
     if not errors:
         raise AgentError(
             "No AI provider is configured."
@@ -137,4 +176,5 @@ def provider_status():
     return {
         "Gemini": gemini.is_configured(),
         "OpenRouter": openrouter.is_configured(),
+        "Groq": groq.is_configured(),
     }
