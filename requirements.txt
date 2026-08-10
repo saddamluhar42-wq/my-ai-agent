@@ -2,3 +2,4 @@ streamlit
 psycopg[binary]
 pypdf
 python-docx
+huggingface_hub
