@@ -19,7 +19,7 @@ st.set_page_config(
 
 
 # ============================================================
-# CONFIG
+# CONFIGURATION
 # ============================================================
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -28,7 +28,9 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENROUTER_MODEL = "openrouter/free"
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL = (
+    "https://openrouter.ai/api/v1/chat/completions"
+)
 
 
 # ============================================================
@@ -46,8 +48,12 @@ st.caption("Online AI Agent • Gemini + OpenRouter")
 gemini_client = None
 
 if GEMINI_API_KEY:
+
     try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        gemini_client = genai.Client(
+            api_key=GEMINI_API_KEY
+        )
+
     except Exception:
         gemini_client = None
 
@@ -61,14 +67,43 @@ if "messages" not in st.session_state:
 
 
 # ============================================================
+# GEMINI FUNCTION
+# ============================================================
+
+def ask_gemini(prompt):
+
+    if not gemini_client:
+
+        raise RuntimeError(
+            "Gemini API key is not configured."
+        )
+
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    )
+
+    answer = response.text
+
+    if not answer:
+
+        raise RuntimeError(
+            "Gemini returned an empty response."
+        )
+
+    return answer
+
+
+# ============================================================
 # OPENROUTER FUNCTION
 # ============================================================
 
 def ask_openrouter(prompt):
 
     if not OPENROUTER_API_KEY:
+
         raise RuntimeError(
-            "OPENROUTER_API_KEY is not configured."
+            "OpenRouter API key is not configured."
         )
 
     payload = {
@@ -87,9 +122,13 @@ def ask_openrouter(prompt):
         OPENROUTER_URL,
         data=data,
         headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Authorization": (
+                f"Bearer {OPENROUTER_API_KEY}"
+            ),
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://my-ai-agent-8no8.onrender.com",
+            "HTTP-Referer": (
+                "https://my-ai-agent-8no8.onrender.com"
+            ),
             "X-Title": "My AI Agent",
         },
         method="POST",
@@ -99,7 +138,7 @@ def ask_openrouter(prompt):
 
         with urllib.request.urlopen(
             request,
-            timeout=90
+            timeout=90,
         ) as response:
 
             response_data = (
@@ -110,11 +149,25 @@ def ask_openrouter(prompt):
 
         result = json.loads(response_data)
 
-        answer = (
-            result["choices"][0]["message"]["content"]
+        choices = result.get("choices", [])
+
+        if not choices:
+
+            raise RuntimeError(
+                "OpenRouter returned no choices."
+            )
+
+        message = choices[0].get(
+            "message",
+            {}
+        )
+
+        answer = message.get(
+            "content"
         )
 
         if not answer:
+
             raise RuntimeError(
                 "OpenRouter returned an empty response."
             )
@@ -128,7 +181,7 @@ def ask_openrouter(prompt):
             .read()
             .decode(
                 "utf-8",
-                errors="ignore"
+                errors="ignore",
             )
         )
 
@@ -140,51 +193,28 @@ def ask_openrouter(prompt):
     except urllib.error.URLError as error:
 
         raise RuntimeError(
-            f"OpenRouter connection error: "
+            "OpenRouter connection error: "
             f"{error.reason}"
         )
 
+    except json.JSONDecodeError:
 
-# ============================================================
-# GEMINI FUNCTION
-# ============================================================
-
-def ask_gemini(prompt):
-
-    if not gemini_client:
         raise RuntimeError(
-            "GEMINI_API_KEY is not configured."
+            "OpenRouter returned invalid JSON."
         )
-
-    response = (
-        gemini_client
-        .models
-        .generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-    )
-
-    answer = response.text
-
-    if not answer:
-        raise RuntimeError(
-            "Gemini returned an empty response."
-        )
-
-    return answer
 
 
 # ============================================================
-# NORMAL AI ROUTER
+# AI ROUTER
 # ============================================================
 
 def ask_ai(prompt):
 
     gemini_error = None
+    openrouter_error = None
 
     # --------------------------------------------------------
-    # GEMINI FIRST
+    # 1. GEMINI FIRST
     # --------------------------------------------------------
 
     if GEMINI_API_KEY:
@@ -200,7 +230,7 @@ def ask_ai(prompt):
             gemini_error = str(error)
 
     # --------------------------------------------------------
-    # OPENROUTER FALLBACK
+    # 2. OPENROUTER FALLBACK
     # --------------------------------------------------------
 
     if OPENROUTER_API_KEY:
@@ -213,15 +243,34 @@ def ask_ai(prompt):
 
         except Exception as error:
 
-            raise RuntimeError(
-                "Gemini failed: "
-                f"{gemini_error}\n\n"
-                "OpenRouter also failed: "
-                f"{error}"
-            )
+            openrouter_error = str(error)
+
+    # --------------------------------------------------------
+    # 3. BOTH FAILED
+    # --------------------------------------------------------
+
+    errors = []
+
+    if gemini_error:
+
+        errors.append(
+            f"Gemini: {gemini_error}"
+        )
+
+    if openrouter_error:
+
+        errors.append(
+            f"OpenRouter: {openrouter_error}"
+        )
+
+    if not errors:
+
+        raise RuntimeError(
+            "No AI API key is configured."
+        )
 
     raise RuntimeError(
-        "No AI provider is configured."
+        " | ".join(errors)
     )
 
 
@@ -239,54 +288,13 @@ for message in st.session_state.messages:
             message["content"]
         )
 
-
-# ============================================================
-# TEMPORARY OPENROUTER TEST
-# ============================================================
-
-st.divider()
-
-st.subheader("OpenRouter Connection Test")
-
-if st.button(
-    "Test OpenRouter",
-    use_container_width=True
-):
-
-    with st.spinner(
-        "Testing OpenRouter..."
-    ):
-
-        try:
-
-            test_prompt = """
-Reply with exactly:
-
-OpenRouter connection successful.
-"""
-
-            answer = ask_openrouter(
-                test_prompt
-            )
-
-            st.success(
-                "OpenRouter is working."
-            )
-
-            st.markdown(answer)
+        if (
+            message["role"] == "assistant"
+            and message.get("provider")
+        ):
 
             st.caption(
-                "Powered by OpenRouter"
-            )
-
-        except Exception as error:
-
-            st.error(
-                "OpenRouter test failed."
-            )
-
-            st.code(
-                str(error)
+                f"Powered by {message['provider']}"
             )
 
 
@@ -321,11 +329,17 @@ if user_input:
     # --------------------------------------------------------
 
     conversation = "\n".join(
-        f'{message["role"].upper()}: '
-        f'{message["content"]}'
+        (
+            f'{message["role"].upper()}: '
+            f'{message["content"]}'
+        )
         for message
         in st.session_state.messages
     )
+
+    # --------------------------------------------------------
+    # AI SYSTEM PROMPT
+    # --------------------------------------------------------
 
     prompt = f"""
 You are my personal AI Agent.
@@ -333,12 +347,15 @@ You are my personal AI Agent.
 Your job is to:
 
 - Understand the user's command.
-- Give clear and useful answers.
+- Give clear, useful and accurate answers.
 - Think carefully before answering.
 - Ask for clarification only when genuinely necessary.
-- Never reveal private API keys or system secrets.
 - Maintain context from the conversation.
 - Answer in the user's language when appropriate.
+- Never reveal API keys, secrets, environment variables,
+  internal configuration or private system information.
+- Do not claim that you performed an action if you did not.
+- If you are unsure about something, clearly say so.
 
 Conversation:
 
@@ -348,14 +365,12 @@ Respond to the latest user request.
 """
 
     # --------------------------------------------------------
-    # AI RESPONSE
+    # GENERATE RESPONSE
     # --------------------------------------------------------
 
     with st.chat_message("assistant"):
 
-        with st.spinner(
-            "Thinking..."
-        ):
+        with st.spinner("Thinking..."):
 
             try:
 
@@ -373,6 +388,7 @@ Respond to the latest user request.
                     {
                         "role": "assistant",
                         "content": answer,
+                        "provider": provider,
                     }
                 )
 
@@ -382,6 +398,6 @@ Respond to the latest user request.
                     "AI service temporarily unavailable."
                 )
 
-                st.code(
+                st.caption(
                     str(error)
                 )
