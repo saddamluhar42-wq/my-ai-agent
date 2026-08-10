@@ -16,6 +16,21 @@ from files.processor import (
 )
 
 
+ALLOWED_FILE_TYPES = [
+    "txt",
+    "md",
+    "csv",
+    "json",
+    "py",
+    "html",
+    "xml",
+    "yaml",
+    "yml",
+    "pdf",
+    "docx",
+]
+
+
 def initialize_chat_state():
     defaults = {
         "messages": [],
@@ -70,7 +85,7 @@ def render_messages():
 
             if provider:
                 st.caption(
-                    provider
+                    f"Powered by {provider}"
                 )
 
 
@@ -83,8 +98,8 @@ def render_empty_state():
                 How can I help you today?
             </div>
             <div class="welcome-subtitle">
-                Ask anything, upload a file,
-                or start a new conversation.
+                Ask anything or attach a file
+                using the + button below.
             </div>
         </div>
         """,
@@ -93,71 +108,60 @@ def render_empty_state():
 
 
 def render_composer():
-    render_file_chips()
-
-    uploaded_files = st.file_uploader(
-        "Attach files",
-        type=[
-            "txt",
-            "md",
-            "csv",
-            "json",
-            "py",
-            "html",
-            "xml",
-            "yaml",
-            "yml",
-            "pdf",
-            "docx",
-        ],
-        accept_multiple_files=True,
-        key="file_uploader",
-        label_visibility="collapsed",
+    submission = st.chat_input(
+        "Message My AI Agent...",
+        accept_file="multiple",
+        file_type=ALLOWED_FILE_TYPES,
+        max_upload_size=200,
+        key="main_chat_input",
     )
 
-    if uploaded_files:
-        process_uploads(
-            uploaded_files
-        )
-
-    prompt = st.chat_input(
-        "Message My AI Agent..."
-    )
-
-    if prompt:
-        handle_user_message(
-            prompt
-        )
-
-
-def render_file_chips():
-    files = st.session_state.get(
-        "uploaded_files",
-        [],
-    )
-
-    if not files:
+    if submission is None:
         return
 
-    chips = []
+    text = submission.text.strip()
 
-    for file_data in files:
-        name = file_data.get(
-            "name",
-            "file",
+    files = list(
+        submission.files
+    )
+
+    if files:
+        process_uploaded_files(
+            files
         )
 
-        chips.append(
-            f'<span class="file-chip">📎 {name}</span>'
+    if not text and files:
+        text = build_file_message(
+            files
         )
 
-    st.markdown(
-        "".join(chips),
-        unsafe_allow_html=True,
+    if text:
+        handle_user_message(
+            text
+        )
+
+
+def build_file_message(files):
+    names = [
+        file.name
+        for file in files
+    ]
+
+    if len(names) == 1:
+        return (
+            "Please analyze the attached "
+            f"file: {names[0]}"
+        )
+
+    joined_names = ", ".join(names)
+
+    return (
+        "Please analyze these attached "
+        f"files: {joined_names}"
     )
 
 
-def process_uploads(
+def process_uploaded_files(
     uploaded_files,
 ):
     current_names = {
