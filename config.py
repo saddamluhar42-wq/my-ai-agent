@@ -22,6 +22,10 @@ GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY"
 )
 
+GEMINI_API_KEY_2 = os.getenv(
+    "GEMINI_API_KEY_2"
+)
+
 OPENROUTER_API_KEY = os.getenv(
     "OPENROUTER_API_KEY"
 )
@@ -30,8 +34,18 @@ GROQ_API_KEY = os.getenv(
     "GROQ_API_KEY"
 )
 
+
+# ============================================================
+# AI MODELS
+# ============================================================
+
 GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
+    "gemini-2.5-flash",
+)
+
+GEMINI_MODEL_2 = os.getenv(
+    "GEMINI_MODEL_2",
     "gemini-2.5-flash",
 )
 
@@ -81,6 +95,12 @@ GEMINI_URL = (
     "https://generativelanguage.googleapis.com/"
     "v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
+)
+
+GEMINI_URL_2 = (
+    "https://generativelanguage.googleapis.com/"
+    "v1beta/models/"
+    f"{GEMINI_MODEL_2}:generateContent"
 )
 
 OPENROUTER_URL = (
@@ -160,6 +180,10 @@ def is_gemini_configured():
     return bool(GEMINI_API_KEY)
 
 
+def is_gemini_2_configured():
+    return bool(GEMINI_API_KEY_2)
+
+
 def is_openrouter_configured():
     return bool(OPENROUTER_API_KEY)
 
@@ -183,6 +207,7 @@ def is_telegram_configured():
 def get_config_status():
     return {
         "gemini": is_gemini_configured(),
+        "gemini_2": is_gemini_2_configured(),
         "openrouter": is_openrouter_configured(),
         "groq": is_groq_configured(),
         "tavily": is_tavily_configured(),
