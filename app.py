@@ -38,11 +38,11 @@ TAVILY_URL = "https://api.tavily.com/search"
 # ============================================================
 
 st.title("🤖 My AI Agent")
-st.caption("Online AI Agent • Gemini + OpenRouter + Web Search")
+st.caption("Online AI Agent • Gemini + OpenRouter + Tavily")
 
 
 # ============================================================
-# GEMINI CLIENT
+# API CLIENT
 # ============================================================
 
 gemini_client = None
@@ -57,11 +57,15 @@ if GEMINI_API_KEY:
 
 
 # ============================================================
-# SESSION STATE
+# SESSION MEMORY
 # ============================================================
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+
+if "last_provider" not in st.session_state:
+    st.session_state.last_provider = None
 
 
 # ============================================================
@@ -73,52 +77,11 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-        if message.get("provider"):
-            st.caption(
-                f"Powered by {message['provider']}"
-            )
+        if message["role"] == "assistant":
+            provider = message.get("provider")
 
-
-# ============================================================
-# WEB SEARCH DETECTOR
-# ============================================================
-
-def needs_web_search(text):
-
-    text = text.lower().strip()
-
-    search_words = [
-        "latest",
-        "today",
-        "current",
-        "now",
-        "news",
-        "recent",
-        "update",
-        "updates",
-        "2026",
-        "price",
-        "prices",
-        "weather",
-        "live",
-        "trending",
-        "new",
-        "recently",
-        "aaj",
-        "abhi",
-        "latest news",
-        "current news",
-        "taza khabar",
-        "taaza khabar",
-        "aaj ka",
-        "abhi ka",
-        "latest update",
-    ]
-
-    return any(
-        word in text
-        for word in search_words
-    )
+            if provider:
+                st.caption(f"Powered by {provider}")
 
 
 # ============================================================
@@ -135,11 +98,9 @@ def search_web(query):
     payload = {
         "api_key": TAVILY_API_KEY,
         "query": query,
-        "search_depth": "basic",
-        "topic": "general",
-        "max_results": 5,
+        "search_depth": "advanced",
         "include_answer": True,
-        "include_raw_content": False,
+        "max_results": 5,
     }
 
     data = json.dumps(payload).encode("utf-8")
@@ -157,75 +118,42 @@ def search_web(query):
 
         with urllib.request.urlopen(
             request,
-            timeout=30
+            timeout=60
         ) as response:
 
-            response_data = (
-                response
-                .read()
-                .decode("utf-8")
+            response_data = response.read().decode(
+                "utf-8"
             )
 
         result = json.loads(response_data)
 
-        answer = result.get(
-            "answer",
-            ""
-        )
+        answer = result.get("answer", "")
 
-        results = result.get(
-            "results",
-            []
-        )
+        results = result.get("results", [])
 
-        search_context = []
-
-        if answer:
-            search_context.append(
-                f"SEARCH SUMMARY:\n{answer}"
-            )
+        sources = []
 
         for item in results:
 
-            title = item.get(
-                "title",
-                ""
-            )
+            title = item.get("title", "")
+            content = item.get("content", "")
+            url = item.get("url", "")
 
-            content = item.get(
-                "content",
-                ""
-            )
-
-            url = item.get(
-                "url",
-                ""
-            )
-
-            search_context.append(
+            sources.append(
                 f"TITLE: {title}\n"
-                f"CONTENT: {content}\n"
-                f"SOURCE: {url}"
+                f"URL: {url}\n"
+                f"CONTENT: {content}"
             )
 
-        if not search_context:
+        web_context = "\n\n".join(sources)
 
-            raise RuntimeError(
-                "Tavily returned no search results."
-            )
-
-        return "\n\n".join(
-            search_context
-        )
+        return answer, web_context
 
     except urllib.error.HTTPError as error:
 
-        error_body = (
-            error.read()
-            .decode(
-                "utf-8",
-                errors="ignore"
-            )
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore"
         )
 
         raise RuntimeError(
@@ -236,8 +164,7 @@ def search_web(query):
     except urllib.error.URLError as error:
 
         raise RuntimeError(
-            f"Tavily connection error: "
-            f"{error.reason}"
+            f"Tavily connection error: {error.reason}"
         )
 
 
@@ -288,9 +215,7 @@ def ask_openrouter(prompt):
         ],
     }
 
-    data = json.dumps(
-        payload
-    ).encode("utf-8")
+    data = json.dumps(payload).encode("utf-8")
 
     request = urllib.request.Request(
         OPENROUTER_URL,
@@ -299,9 +224,7 @@ def ask_openrouter(prompt):
             "Authorization": (
                 f"Bearer {OPENROUTER_API_KEY}"
             ),
-            "Content-Type": (
-                "application/json"
-            ),
+            "Content-Type": "application/json",
             "HTTP-Referer": (
                 "https://my-ai-agent-8no8.onrender.com"
             ),
@@ -317,15 +240,11 @@ def ask_openrouter(prompt):
             timeout=90
         ) as response:
 
-            response_data = (
-                response
-                .read()
-                .decode("utf-8")
+            response_data = response.read().decode(
+                "utf-8"
             )
 
-        result = json.loads(
-            response_data
-        )
+        result = json.loads(response_data)
 
         answer = (
             result["choices"][0]
@@ -334,20 +253,16 @@ def ask_openrouter(prompt):
 
         if not answer:
             raise RuntimeError(
-                "OpenRouter returned "
-                "an empty response."
+                "OpenRouter returned an empty response."
             )
 
         return answer
 
     except urllib.error.HTTPError as error:
 
-        error_body = (
-            error.read()
-            .decode(
-                "utf-8",
-                errors="ignore"
-            )
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore"
         )
 
         raise RuntimeError(
@@ -433,6 +348,29 @@ def ask_ai(prompt):
 
 
 # ============================================================
+# BUILD MEMORY
+# ============================================================
+
+def build_memory():
+
+    if not st.session_state.messages:
+        return "No previous conversation."
+
+    memory_parts = []
+
+    for message in st.session_state.messages:
+
+        role = message["role"].upper()
+        content = message["content"]
+
+        memory_parts.append(
+            f"{role}: {content}"
+        )
+
+    return "\n\n".join(memory_parts)
+
+
+# ============================================================
 # CHAT INPUT
 # ============================================================
 
@@ -458,46 +396,70 @@ if user_input:
         st.markdown(user_input)
 
     # --------------------------------------------------------
-    # BUILD CONVERSATION
+    # BUILD MEMORY
     # --------------------------------------------------------
 
-    conversation = "\n".join(
-        f'{message["role"].upper()}: '
-        f'{message["content"]}'
-        for message
-        in st.session_state.messages
+    conversation = build_memory()
+
+    # --------------------------------------------------------
+    # WEB SEARCH DETECTION
+    # --------------------------------------------------------
+
+    search_words = [
+        "latest",
+        "today",
+        "news",
+        "current",
+        "recent",
+        "abhi",
+        "aaj",
+        "latest update",
+        "price",
+        "weather",
+        "search",
+        "internet",
+        "online",
+        "who is",
+        "what happened",
+    ]
+
+    should_search = any(
+        word in user_input.lower()
+        for word in search_words
     )
 
+    web_context = ""
+
     # --------------------------------------------------------
-    # WEB SEARCH
+    # OPTIONAL WEB SEARCH
     # --------------------------------------------------------
 
-    search_context = ""
-    search_used = False
-
-    if needs_web_search(user_input):
+    if should_search and TAVILY_API_KEY:
 
         try:
 
-            with st.spinner(
-                "Web par search kar raha hoon..."
-            ):
+            with st.spinner("Web par search kar raha hoon..."):
 
-                search_context = search_web(
-                    user_input
+                search_answer, search_results = (
+                    search_web(user_input)
                 )
 
-            search_used = True
+            web_context = (
+                f"WEB SEARCH ANSWER:\n"
+                f"{search_answer}\n\n"
+                f"WEB SOURCES:\n"
+                f"{search_results}"
+            )
 
         except Exception as error:
 
-            st.warning(
-                "Web search unavailable. "
-                "AI se normal answer liya ja raha hai."
+            web_context = (
+                "Web search failed. "
+                "Answer using available knowledge."
             )
 
     # --------------------------------------------------------
-    # PROMPT
+    # AI PROMPT
     # --------------------------------------------------------
 
     prompt = f"""
@@ -509,22 +471,28 @@ Your job is to:
 - Give clear and useful answers.
 - Think carefully before answering.
 - Ask for clarification only when genuinely necessary.
-- Never reveal private API keys or system secrets.
-- Maintain context from the conversation.
+- Never reveal API keys, passwords, tokens, or system secrets.
+- Maintain conversation context.
 - Answer in the user's language when appropriate.
-- Do not invent facts.
+- Do not invent current information.
 - If web search information is provided, use it for
-  current information and prefer the provided sources.
+  current/fresh information.
+- Keep answers practical and easy to understand.
 
-Conversation:
+IMPORTANT:
 
+You have access to conversation memory below.
+
+CONVERSATION MEMORY:
 {conversation}
 
-Web Search Results:
+WEB SEARCH CONTEXT:
+{web_context}
 
-{search_context}
+LATEST USER REQUEST:
+{user_input}
 
-Respond to the latest user request.
+Respond directly to the latest user request.
 """
 
     # --------------------------------------------------------
@@ -533,40 +501,39 @@ Respond to the latest user request.
 
     with st.chat_message("assistant"):
 
-        with st.spinner(
-            "Thinking..."
-        ):
+        with st.spinner("Thinking..."):
 
             try:
 
-                answer, provider = ask_ai(
-                    prompt
-                )
+                answer, provider = ask_ai(prompt)
 
                 st.markdown(answer)
 
-                if search_used:
-
-                    st.caption(
-                        f"Powered by {provider} + Tavily Web Search"
+                if web_context:
+                    provider_text = (
+                        f"{provider} + Tavily Web Search"
                     )
-
                 else:
+                    provider_text = provider
 
-                    st.caption(
-                        f"Powered by {provider}"
-                    )
+                st.caption(
+                    f"Powered by {provider_text}"
+                )
+
+                # ------------------------------------------------
+                # SAVE ASSISTANT RESPONSE
+                # ------------------------------------------------
 
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
                         "content": answer,
-                        "provider": (
-                            f"{provider} + Tavily"
-                            if search_used
-                            else provider
-                        ),
+                        "provider": provider_text,
                     }
+                )
+
+                st.session_state.last_provider = (
+                    provider_text
                 )
 
             except Exception as error:
@@ -575,6 +542,4 @@ Respond to the latest user request.
                     "AI service temporarily unavailable."
                 )
 
-                st.caption(
-                    str(error)
-                )
+                st.caption(str(error))
