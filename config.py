@@ -63,8 +63,31 @@ ANTHROPIC_API_KEY_3 = os.getenv(
 # IMAGE GENERATION
 # ============================================================
 
+# Hugging Face
 HF_TOKEN = os.getenv(
     "HF_TOKEN"
+)
+
+HF_TOKEN_2 = os.getenv(
+    "HF_TOKEN_2"
+)
+
+HF_TOKEN_3 = os.getenv(
+    "HF_TOKEN_3"
+)
+
+
+# NVIDIA
+NVIDIA_API_KEY = os.getenv(
+    "NVIDIA_API_KEY"
+)
+
+NVIDIA_API_KEY_2 = os.getenv(
+    "NVIDIA_API_KEY_2"
+)
+
+NVIDIA_API_KEY_3 = os.getenv(
+    "NVIDIA_API_KEY_3"
 )
 
 
@@ -110,6 +133,21 @@ MISTRAL_MODEL = os.getenv(
 ANTHROPIC_MODEL = os.getenv(
     "ANTHROPIC_MODEL",
     "claude-3-5-haiku-latest",
+)
+
+
+# ============================================================
+# IMAGE MODELS
+# ============================================================
+
+HF_IMAGE_MODEL = os.getenv(
+    "HF_IMAGE_MODEL",
+    "black-forest-labs/FLUX.1-schnell",
+)
+
+NVIDIA_IMAGE_MODEL = os.getenv(
+    "NVIDIA_IMAGE_MODEL",
+    "black-forest-labs/FLUX.1-dev",
 )
 
 
@@ -184,6 +222,10 @@ TAVILY_URL = (
     "https://api.tavily.com/search"
 )
 
+NVIDIA_URL = (
+    "https://integrate.api.nvidia.com/v1/images/generations"
+)
+
 TELEGRAM_URL = (
     f"https://api.telegram.org/bot"
     f"{TELEGRAM_BOT_TOKEN}"
@@ -242,7 +284,7 @@ TELEGRAM_MESSAGE_LIMIT = 3900
 
 
 # ============================================================
-# HELPERS
+# HELPERS — GEMINI
 # ============================================================
 
 def is_gemini_configured():
@@ -253,6 +295,10 @@ def is_gemini_2_configured():
     return bool(GEMINI_API_KEY_2)
 
 
+# ============================================================
+# HELPERS — OPENROUTER
+# ============================================================
+
 def is_openrouter_configured():
     return bool(OPENROUTER_API_KEY)
 
@@ -260,6 +306,10 @@ def is_openrouter_configured():
 def is_openrouter_2_configured():
     return bool(OPENROUTER_API_KEY_2)
 
+
+# ============================================================
+# HELPERS — OTHER TEXT PROVIDERS
+# ============================================================
 
 def is_groq_configured():
     return bool(GROQ_API_KEY)
@@ -281,9 +331,49 @@ def is_anthropic_configured():
     )
 
 
-def is_hf_configured():
-    return bool(HF_TOKEN)
+# ============================================================
+# HELPERS — HUGGING FACE
+# ============================================================
 
+def is_hf_configured():
+    return bool(
+        HF_TOKEN
+        or HF_TOKEN_2
+        or HF_TOKEN_3
+    )
+
+
+def is_hf_2_configured():
+    return bool(HF_TOKEN_2)
+
+
+def is_hf_3_configured():
+    return bool(HF_TOKEN_3)
+
+
+# ============================================================
+# HELPERS — NVIDIA
+# ============================================================
+
+def is_nvidia_configured():
+    return bool(
+        NVIDIA_API_KEY
+        or NVIDIA_API_KEY_2
+        or NVIDIA_API_KEY_3
+    )
+
+
+def is_nvidia_2_configured():
+    return bool(NVIDIA_API_KEY_2)
+
+
+def is_nvidia_3_configured():
+    return bool(NVIDIA_API_KEY_3)
+
+
+# ============================================================
+# HELPERS — OTHER SERVICES
+# ============================================================
 
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
@@ -297,17 +387,32 @@ def is_telegram_configured():
     return bool(TELEGRAM_BOT_TOKEN)
 
 
+# ============================================================
+# CONFIG STATUS
+# ============================================================
+
 def get_config_status():
     return {
         "gemini": is_gemini_configured(),
         "gemini_2": is_gemini_2_configured(),
+
         "openrouter": is_openrouter_configured(),
         "openrouter_2": is_openrouter_2_configured(),
+
         "groq": is_groq_configured(),
         "cerebras": is_cerebras_configured(),
         "mistral": is_mistral_configured(),
+
         "anthropic": is_anthropic_configured(),
+
         "huggingface": is_hf_configured(),
+        "huggingface_2": is_hf_2_configured(),
+        "huggingface_3": is_hf_3_configured(),
+
+        "nvidia": is_nvidia_configured(),
+        "nvidia_2": is_nvidia_2_configured(),
+        "nvidia_3": is_nvidia_3_configured(),
+
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
