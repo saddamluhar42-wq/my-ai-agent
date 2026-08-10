@@ -99,10 +99,10 @@ def database_query(
     fetch="none",
 ):
     """
-    Controlled server-side PostgreSQL helper.
+    Server-side PostgreSQL helper.
 
     The AI model never receives DATABASE_URL.
-    The AI model never executes SQL directly.
+    The AI model never executes arbitrary SQL.
     """
 
     if not DATABASE_URL:
@@ -246,7 +246,7 @@ def initialize_database():
 
 
 # ============================================================
-# DATABASE INITIALIZATION
+# ENSURE DATABASE
 # ============================================================
 
 def ensure_database_initialized():
@@ -413,7 +413,7 @@ def load_conversation_messages(
 
 
 # ============================================================
-# LOAD PERSISTENT MEMORY
+# PERSISTENT MEMORY LOAD
 # ============================================================
 
 def load_persistent_memory():
@@ -578,7 +578,7 @@ def finish_agent_run(
 
 
 # ============================================================
-# DATABASE BASIC TOOLS
+# DATABASE INFO
 # ============================================================
 
 def test_database_connection():
@@ -648,7 +648,7 @@ def list_database_tables():
 
 
 # ============================================================
-# NEW: LATEST AGENT RUNS TOOL
+# AGENT RUNS TOOL
 # ============================================================
 
 def get_latest_agent_runs(limit=10):
@@ -707,7 +707,7 @@ def get_latest_agent_runs(limit=10):
 
 
 # ============================================================
-# NEW: CURRENT CONVERSATION HISTORY TOOL
+# CONVERSATION HISTORY TOOL
 # ============================================================
 
 def get_current_conversation_history(
@@ -772,23 +772,160 @@ def get_current_conversation_history(
 
 
 # ============================================================
-# NEW: SAVED MEMORY TOOL
+# MEMORY SEARCH
 # ============================================================
 
-def get_saved_memory(limit=50):
+def search_memory(
+    user_input,
+    limit=20,
+):
 
-    result = (
-        get_current_conversation_history(
-            limit=limit
-        )
+    if not st.session_state.conversation_id:
+
+        return []
+
+    query_text = user_input.strip()
+
+    if not query_text:
+        return []
+
+    safe_limit = max(
+        1,
+        min(int(limit), 50),
     )
 
-    return {
-        "conversation_id": result[
-            "conversation_id"
-        ],
-        "memory": result["messages"],
-    }
+    # --------------------------------------------------------
+    # First: exact/keyword-style search using PostgreSQL
+    # --------------------------------------------------------
+
+    rows = database_query(
+        f"""
+        SELECT
+            id,
+            role,
+            content,
+            provider,
+            created_at
+        FROM messages
+        WHERE conversation_id = %s
+          AND content ILIKE %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT {safe_limit};
+        """,
+        (
+            st.session_state.conversation_id,
+            f"%{query_text}%",
+        ),
+        fetch="all",
+    )
+
+    if rows:
+
+        results = []
+
+        for row in reversed(rows):
+
+            results.append(
+                {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "provider": row[3],
+                    "created_at": (
+                        row[4].isoformat()
+                        if row[4]
+                        else None
+                    ),
+                }
+            )
+
+        return results
+
+    # --------------------------------------------------------
+    # Fallback: return recent memory for AI to interpret
+    # --------------------------------------------------------
+
+    recent_rows = database_query(
+        f"""
+        SELECT
+            id,
+            role,
+            content,
+            provider,
+            created_at
+        FROM messages
+        WHERE conversation_id = %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT {safe_limit};
+        """,
+        (
+            st.session_state.conversation_id,
+        ),
+        fetch="all",
+    )
+
+    results = []
+
+    for row in reversed(recent_rows):
+
+        results.append(
+            {
+                "id": row[0],
+                "role": row[1],
+                "content": row[2],
+                "provider": row[3],
+                "created_at": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+            }
+        )
+
+    return results
+
+
+# ============================================================
+# MEMORY INTENT DETECTION
+# ============================================================
+
+def detect_memory_intent(
+    user_input,
+):
+
+    text = user_input.lower().strip()
+
+    memory_phrases = [
+
+        "what do you remember",
+        "what did i tell you",
+        "what did i tell u",
+        "do you remember",
+        "remember my",
+        "my secret project",
+        "secret project name",
+        "favorite project",
+        "my favorite project",
+        "what is my project name",
+        "what's my project name",
+        "what is my secret",
+        "what's my secret",
+        "saved memory",
+        "show my memory",
+        "my saved memory",
+        "previously told you",
+        "from our previous conversation",
+        "from previous conversation",
+        "from our conversation",
+        "previous conversation",
+        "conversation memory",
+        "memory",
+    ]
+
+    return any(
+        phrase in text
+        for phrase in memory_phrases
+    )
 
 
 # ============================================================
@@ -927,27 +1064,15 @@ def run_database_tool(
 
     try:
 
-        # ----------------------------------------------------
-        # CONNECTION
-        # ----------------------------------------------------
-
         if command == "test_connection":
 
             result = (
                 test_database_connection()
             )
 
-        # ----------------------------------------------------
-        # DATABASE INFO
-        # ----------------------------------------------------
-
         elif command == "database_info":
 
             result = get_database_info()
-
-        # ----------------------------------------------------
-        # TABLES
-        # ----------------------------------------------------
 
         elif command == "list_tables":
 
@@ -957,10 +1082,6 @@ def run_database_tool(
                     list_database_tables()
                 ),
             }
-
-        # ----------------------------------------------------
-        # AGENT RUNS
-        # ----------------------------------------------------
 
         elif command == "latest_agent_runs":
 
@@ -973,10 +1094,6 @@ def run_database_tool(
                 ),
             }
 
-        # ----------------------------------------------------
-        # CONVERSATION
-        # ----------------------------------------------------
-
         elif command == "conversation_history":
 
             result = {
@@ -986,15 +1103,11 @@ def run_database_tool(
                 ),
             }
 
-        # ----------------------------------------------------
-        # MEMORY
-        # ----------------------------------------------------
-
         elif command == "saved_memory":
 
             result = {
                 "status": "success",
-                **get_saved_memory(
+                **get_current_conversation_history(
                     limit=50
                 ),
             }
@@ -1023,10 +1136,57 @@ def run_database_tool(
 
 
 # ============================================================
+# RUN MEMORY TOOL
+# ============================================================
+
+def run_memory_tool(
+    user_input,
+):
+
+    if not detect_memory_intent(
+        user_input
+    ):
+
+        return None
+
+    if not database_available():
+
+        return {
+            "tool": "PostgreSQL Memory",
+            "status": "not_configured",
+            "memory": [],
+        }
+
+    try:
+
+        results = search_memory(
+            user_input,
+            limit=30,
+        )
+
+        return {
+            "tool": "PostgreSQL Memory",
+            "status": "success",
+            "memory": results,
+        }
+
+    except Exception as error:
+
+        return {
+            "tool": "PostgreSQL Memory",
+            "status": "error",
+            "message": str(error),
+            "memory": [],
+        }
+
+
+# ============================================================
 # TAVILY WEB SEARCH
 # ============================================================
 
-def search_web(query):
+def search_web(
+    query,
+):
 
     if not TAVILY_API_KEY:
 
@@ -1119,7 +1279,9 @@ def search_web(query):
 # GEMINI
 # ============================================================
 
-def ask_gemini(prompt):
+def ask_gemini(
+    prompt,
+):
 
     if not GEMINI_API_KEY:
 
@@ -1223,7 +1385,9 @@ def ask_gemini(prompt):
 # OPENROUTER
 # ============================================================
 
-def ask_openrouter(prompt):
+def ask_openrouter(
+    prompt,
+):
 
     if not OPENROUTER_API_KEY:
 
@@ -1322,14 +1486,12 @@ def ask_openrouter(prompt):
 # AI ROUTER
 # ============================================================
 
-def ask_ai(prompt):
+def ask_ai(
+    prompt,
+):
 
     gemini_error = None
     openrouter_error = None
-
-    # --------------------------------------------------------
-    # GEMINI FIRST
-    # --------------------------------------------------------
 
     if GEMINI_API_KEY:
 
@@ -1349,10 +1511,6 @@ def ask_ai(prompt):
 
             gemini_error = str(error)
 
-    # --------------------------------------------------------
-    # OPENROUTER FALLBACK
-    # --------------------------------------------------------
-
     if OPENROUTER_API_KEY:
 
         try:
@@ -1371,10 +1529,6 @@ def ask_ai(prompt):
 
             openrouter_error = str(error)
 
-    # --------------------------------------------------------
-    # BOTH FAILED
-    # --------------------------------------------------------
-
     errors = []
 
     if gemini_error:
@@ -1392,8 +1546,7 @@ def ask_ai(prompt):
     if not errors:
 
         raise RuntimeError(
-            "Neither GEMINI_API_KEY nor "
-            "OPENROUTER_API_KEY is configured."
+            "No AI provider is configured."
         )
 
     raise RuntimeError(
@@ -1483,7 +1636,7 @@ user_input = st.chat_input(
 
 
 # ============================================================
-# PROCESS MESSAGE
+# PROCESS USER MESSAGE
 # ============================================================
 
 if user_input:
@@ -1501,10 +1654,12 @@ if user_input:
 
     with st.chat_message("user"):
 
-        st.markdown(user_input)
+        st.markdown(
+            user_input
+        )
 
     # --------------------------------------------------------
-    # SAVE USER TO POSTGRESQL
+    # SAVE USER TO DATABASE
     # --------------------------------------------------------
 
     try:
@@ -1524,13 +1679,13 @@ if user_input:
         )
 
     # --------------------------------------------------------
-    # BUILD CONVERSATION MEMORY
+    # BUILD NORMAL CONVERSATION MEMORY
     # --------------------------------------------------------
 
     conversation = build_memory()
 
     # --------------------------------------------------------
-    # DATABASE TOOL
+    # DATABASE COMMAND TOOL
     # --------------------------------------------------------
 
     database_result = (
@@ -1538,6 +1693,20 @@ if user_input:
             user_input
         )
     )
+
+    # --------------------------------------------------------
+    # MEMORY SEARCH TOOL
+    # --------------------------------------------------------
+
+    memory_result = (
+        run_memory_tool(
+            user_input
+        )
+    )
+
+    # --------------------------------------------------------
+    # DATABASE CONTEXT
+    # --------------------------------------------------------
 
     database_context = ""
 
@@ -1547,6 +1716,23 @@ if user_input:
             "POSTGRESQL DATABASE TOOL RESULT:\n"
             + json.dumps(
                 database_result,
+                indent=2,
+                default=str,
+            )
+        )
+
+    # --------------------------------------------------------
+    # MEMORY CONTEXT
+    # --------------------------------------------------------
+
+    memory_context = ""
+
+    if memory_result:
+
+        memory_context = (
+            "POSTGRESQL MEMORY TOOL RESULT:\n"
+            + json.dumps(
+                memory_result,
                 indent=2,
                 default=str,
             )
@@ -1579,9 +1765,15 @@ if user_input:
         for word in search_words
     )
 
-    # IMPORTANT:
-    # PostgreSQL commands should NOT trigger Tavily.
+    # --------------------------------------------------------
+    # DO NOT SEARCH WEB FOR DATABASE/MEMORY
+    # --------------------------------------------------------
+
     if database_result:
+
+        should_search = False
+
+    if memory_result:
 
         should_search = False
 
@@ -1630,46 +1822,70 @@ if user_input:
     prompt = f"""
 You are My AI Agent.
 
-Your job is to understand the user's request
-and provide a clear, useful answer.
+You have access to:
+1. Conversation memory
+2. PostgreSQL database tools
+3. PostgreSQL persistent memory
+4. Tavily web search context
+5. Gemini / OpenRouter
 
-Rules:
+IMPORTANT MEMORY RULES:
 
-1. Use conversation memory when relevant.
-2. Never invent database results.
-3. Never expose API keys, passwords, tokens,
-   DATABASE_URL, or system secrets.
-4. PostgreSQL operations are performed by the
-   application-side tools.
-5. When PostgreSQL tool results are supplied,
-   use those actual results.
-6. Never claim that a database operation was
-   executed unless the PostgreSQL tool result
-   is supplied.
-7. Current/latest information should use the
-   supplied web-search context.
-8. If PostgreSQL tool context is supplied,
-   do not invent additional database rows.
-9. Answer in the user's language when appropriate.
-10. Keep answers practical and easy to understand.
+- If PostgreSQL Memory Tool Result contains
+  information relevant to the user's question,
+  answer using that actual memory.
+- Do not say you cannot access memory if memory
+  data is supplied below.
+- Do not invent memories.
+- If the exact answer is present in memory,
+  give the answer directly.
+- For questions like:
+  "What is my secret project name?"
+  "What is my favorite project?"
+  "What do you remember about me?"
+  use PostgreSQL memory when supplied.
+- Do not use Tavily for personal memory.
+- Personal memory has priority over web search.
 
-POSTGRESQL DATABASE CONTEXT:
+IMPORTANT DATABASE RULES:
 
-{database_context}
+- Never invent database rows.
+- Never invent table names.
+- Never claim a database query ran unless the
+  application supplied a PostgreSQL result.
+- Never expose DATABASE_URL or secrets.
+- PostgreSQL operations are performed server-side.
 
-WEB SEARCH CONTEXT:
+IMPORTANT WEB RULES:
 
-{web_context}
+- Current/latest information should use the supplied
+  web search context when available.
+- Do not use web information to answer personal memory
+  questions.
 
 CONVERSATION MEMORY:
 
 {conversation}
 
+POSTGRESQL DATABASE CONTEXT:
+
+{database_context}
+
+POSTGRESQL MEMORY CONTEXT:
+
+{memory_context}
+
+WEB SEARCH CONTEXT:
+
+{web_context}
+
 LATEST USER REQUEST:
 
 {user_input}
 
-Respond directly to the latest user request.
+Answer the user's latest request directly.
+If the requested personal information is present
+in PostgreSQL memory, answer from that memory.
 """
 
     # --------------------------------------------------------
@@ -1714,7 +1930,7 @@ Respond directly to the latest user request.
                     )
 
                 # --------------------------------------------
-                # PROVIDER DISPLAY
+                # PROVIDER LABEL
                 # --------------------------------------------
 
                 provider_parts = [
@@ -1733,6 +1949,12 @@ Respond directly to the latest user request.
                         "PostgreSQL"
                     )
 
+                if memory_result:
+
+                    provider_parts.append(
+                        "PostgreSQL Memory"
+                    )
+
                 provider_text = (
                     " + ".join(
                         provider_parts
@@ -1740,10 +1962,12 @@ Respond directly to the latest user request.
                 )
 
                 # --------------------------------------------
-                # DISPLAY ANSWER
+                # DISPLAY
                 # --------------------------------------------
 
-                st.markdown(answer)
+                st.markdown(
+                    answer
+                )
 
                 st.caption(
                     f"Powered by {provider_text}"
