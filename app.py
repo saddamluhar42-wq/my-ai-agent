@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 import urllib.request
 import urllib.error
 
@@ -38,17 +39,11 @@ GEMINI_URL = (
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 TAVILY_URL = "https://api.tavily.com/search"
 
-
-# ============================================================
-# UI
-# ============================================================
-
-st.title("🤖 My AI Agent")
-st.caption("Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL")
+APP_NAME = "My AI Agent"
 
 
 # ============================================================
-# SESSION MEMORY
+# SESSION STATE
 # ============================================================
 
 if "messages" not in st.session_state:
@@ -57,36 +52,45 @@ if "messages" not in st.session_state:
 if "last_provider" not in st.session_state:
     st.session_state.last_provider = None
 
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = None
+
+if "database_initialized" not in st.session_state:
+    st.session_state.database_initialized = False
+
+if "database_error" not in st.session_state:
+    st.session_state.database_error = None
+
 
 # ============================================================
-# SHOW CHAT HISTORY
+# PAGE HEADER
 # ============================================================
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-        if message["role"] == "assistant":
-            provider = message.get("provider")
-
-            if provider:
-                st.caption(f"Powered by {provider}")
+st.title("🤖 My AI Agent")
+st.caption("Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL")
 
 
 # ============================================================
-# POSTGRESQL DATABASE
+# DATABASE
 # ============================================================
 
 def database_available():
     return bool(DATABASE_URL)
 
 
-def database_query(query, params=None, fetch="all"):
+def database_query(query, params=None, fetch="none"):
     """
     Controlled PostgreSQL helper.
 
-    AI ko arbitrary SQL execute karne ki permission nahi hai.
-    Sirf application ke internally defined safe queries use hoti hain.
+    Application-defined SQL only.
+    The AI model never receives direct database credentials
+    and never executes arbitrary SQL.
     """
 
     if not DATABASE_URL:
@@ -94,7 +98,7 @@ def database_query(query, params=None, fetch="all"):
 
     with psycopg.connect(
         DATABASE_URL,
-        connect_timeout=10
+        connect_timeout=10,
     ) as connection:
 
         with connection.cursor() as cursor:
@@ -109,15 +113,400 @@ def database_query(query, params=None, fetch="all"):
             return None
 
 
+# ============================================================
+# DATABASE SCHEMA
+# ============================================================
+
+def initialize_database():
+    """
+    Creates the complete initial PostgreSQL schema.
+
+    This runs automatically from the Streamlit application,
+    so Render Shell is not required.
+    """
+
+    if not database_available():
+        return False
+
+    statements = [
+
+        # ----------------------------------------------------
+        # USERS
+        # ----------------------------------------------------
+
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            external_id TEXT UNIQUE NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+
+        # ----------------------------------------------------
+        # CONVERSATIONS
+        # ----------------------------------------------------
+
+        """
+        CREATE TABLE IF NOT EXISTS conversations (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL
+                REFERENCES users(id)
+                ON DELETE CASCADE,
+            title TEXT NOT NULL DEFAULT 'New Conversation',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+
+        # ----------------------------------------------------
+        # MESSAGES
+        # ----------------------------------------------------
+
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL
+                REFERENCES conversations(id)
+                ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            provider TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """,
+
+        # ----------------------------------------------------
+        # AGENT RUNS
+        # ----------------------------------------------------
+
+        """
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL
+                REFERENCES conversations(id)
+                ON DELETE CASCADE,
+            message_id BIGINT
+                REFERENCES messages(id)
+                ON DELETE SET NULL,
+            provider TEXT,
+            model TEXT,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at TIMESTAMPTZ,
+            metadata JSONB
+        );
+        """,
+
+        # ----------------------------------------------------
+        # USER SETTINGS
+        # ----------------------------------------------------
+
+        """
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL
+                REFERENCES users(id)
+                ON DELETE CASCADE,
+            setting_key TEXT NOT NULL,
+            setting_value TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, setting_key)
+        );
+        """,
+
+        # ----------------------------------------------------
+        # INDEXES
+        # ----------------------------------------------------
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_conversations_user_id
+        ON conversations(user_id);
+        """,
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
+        ON messages(conversation_id);
+        """,
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation_id
+        ON agent_runs(conversation_id);
+        """,
+
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_settings_user_id
+        ON user_settings(user_id);
+        """,
+    ]
+
+    with psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10,
+    ) as connection:
+
+        with connection.cursor() as cursor:
+
+            for statement in statements:
+                cursor.execute(statement)
+
+        connection.commit()
+
+    return True
+
+
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
+def ensure_database_initialized():
+    if st.session_state.database_initialized:
+        return
+
+    if not database_available():
+        st.session_state.database_error = (
+            "DATABASE_URL is not configured."
+        )
+        return
+
+    try:
+        initialize_database()
+
+        st.session_state.database_initialized = True
+        st.session_state.database_error = None
+
+    except Exception as error:
+        st.session_state.database_error = str(error)
+
+
+ensure_database_initialized()
+
+
+# ============================================================
+# USER / CONVERSATION INITIALIZATION
+# ============================================================
+
+def get_or_create_user():
+    """
+    Creates an anonymous application user for the current
+    Streamlit session.
+
+    Later this can be replaced by real authentication.
+    """
+
+    if not database_available():
+        return None
+
+    external_id = st.session_state.session_id
+
+    row = database_query(
+        """
+        SELECT id
+        FROM users
+        WHERE external_id = %s;
+        """,
+        (external_id,),
+        fetch="one",
+    )
+
+    if row:
+        return row[0]
+
+    row = database_query(
+        """
+        INSERT INTO users (
+            external_id,
+            display_name
+        )
+        VALUES (%s, %s)
+        RETURNING id;
+        """,
+        (
+            external_id,
+            "Anonymous User",
+        ),
+        fetch="one",
+    )
+
+    return row[0]
+
+
+def create_conversation(user_id):
+    if not user_id:
+        return None
+
+    row = database_query(
+        """
+        INSERT INTO conversations (
+            user_id,
+            title
+        )
+        VALUES (%s, %s)
+        RETURNING id;
+        """,
+        (
+            user_id,
+            "New Conversation",
+        ),
+        fetch="one",
+    )
+
+    return row[0]
+
+
+def ensure_user_and_conversation():
+    if not database_available():
+        return
+
+    if st.session_state.user_id is None:
+        st.session_state.user_id = get_or_create_user()
+
+    if st.session_state.conversation_id is None:
+        st.session_state.conversation_id = create_conversation(
+            st.session_state.user_id
+        )
+
+
+if (
+    st.session_state.database_initialized
+    and st.session_state.user_id is None
+):
+    try:
+        ensure_user_and_conversation()
+    except Exception as error:
+        st.session_state.database_error = str(error)
+
+
+# ============================================================
+# DATABASE MESSAGE STORAGE
+# ============================================================
+
+def save_message(
+    conversation_id,
+    role,
+    content,
+    provider=None,
+):
+    if not conversation_id:
+        return None
+
+    row = database_query(
+        """
+        INSERT INTO messages (
+            conversation_id,
+            role,
+            content,
+            provider
+        )
+        VALUES (%s, %s, %s, %s)
+        RETURNING id;
+        """,
+        (
+            conversation_id,
+            role,
+            content,
+            provider,
+        ),
+        fetch="one",
+    )
+
+    database_query(
+        """
+        UPDATE conversations
+        SET updated_at = NOW()
+        WHERE id = %s;
+        """,
+        (conversation_id,),
+    )
+
+    return row[0]
+
+
+# ============================================================
+# AGENT RUN TRACKING
+# ============================================================
+
+def start_agent_run(
+    conversation_id,
+    provider,
+    model,
+):
+    if not conversation_id:
+        return None
+
+    row = database_query(
+        """
+        INSERT INTO agent_runs (
+            conversation_id,
+            provider,
+            model,
+            status,
+            metadata
+        )
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id;
+        """,
+        (
+            conversation_id,
+            provider,
+            model,
+            "running",
+            json.dumps(
+                {
+                    "application": APP_NAME,
+                }
+            ),
+        ),
+        fetch="one",
+    )
+
+    return row[0]
+
+
+def finish_agent_run(
+    run_id,
+    status,
+    message_id=None,
+    error_message=None,
+):
+    if not run_id:
+        return
+
+    database_query(
+        """
+        UPDATE agent_runs
+        SET
+            status = %s,
+            message_id = %s,
+            error_message = %s,
+            completed_at = NOW()
+        WHERE id = %s;
+        """,
+        (
+            status,
+            message_id,
+            error_message,
+            run_id,
+        ),
+    )
+
+
+# ============================================================
+# DATABASE HEALTH
+# ============================================================
+
 def test_database_connection():
     row = database_query(
         "SELECT 1;",
-        fetch="one"
+        fetch="one",
     )
 
     if not row or row[0] != 1:
         raise RuntimeError(
-            "PostgreSQL connection test returned an unexpected result."
+            "PostgreSQL connection test returned "
+            "an unexpected result."
         )
 
     return {
@@ -132,7 +521,7 @@ def get_database_info():
         SELECT
             current_database(),
             current_user,
-            version()
+            version();
         """,
         fetch="one",
     )
@@ -156,7 +545,7 @@ def list_database_tables():
             'information_schema'
         )
         AND table_type = 'BASE TABLE'
-        ORDER BY table_schema, table_name
+        ORDER BY table_schema, table_name;
         """,
         fetch="all",
     )
@@ -170,11 +559,11 @@ def list_database_tables():
     ]
 
 
-def detect_database_command(user_input):
-    """
-    Common database requests detect karta hai.
-    """
+# ============================================================
+# DATABASE COMMAND DETECTION
+# ============================================================
 
+def detect_database_command(user_input):
     text = user_input.lower().strip()
 
     database_words = [
@@ -187,9 +576,17 @@ def detect_database_command(user_input):
         "database connection",
         "database test",
         "sql connection",
+        "tables",
+        "table",
+        "schema",
+        "database info",
+        "database information",
     ]
 
-    if not any(word in text for word in database_words):
+    if not any(
+        word in text
+        for word in database_words
+    ):
         return None
 
     if any(
@@ -240,7 +637,10 @@ def run_database_tool(user_input):
         return {
             "tool": "PostgreSQL",
             "status": "not_configured",
-            "message": "DATABASE_URL is not configured in the environment.",
+            "message": (
+                "DATABASE_URL is not configured "
+                "in the environment."
+            ),
         }
 
     try:
@@ -318,10 +718,14 @@ def search_web(query):
 
         with urllib.request.urlopen(
             request,
-            timeout=60
+            timeout=60,
         ) as response:
 
-            response_data = response.read().decode("utf-8")
+            response_data = (
+                response
+                .read()
+                .decode("utf-8")
+            )
 
         result = json.loads(response_data)
 
@@ -350,11 +754,12 @@ def search_web(query):
 
         error_body = error.read().decode(
             "utf-8",
-            errors="ignore"
+            errors="ignore",
         )
 
         raise RuntimeError(
-            f"Tavily HTTP {error.code}: {error_body[:500]}"
+            f"Tavily HTTP {error.code}: "
+            f"{error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
@@ -381,7 +786,7 @@ def ask_gemini(prompt):
                 "role": "user",
                 "parts": [
                     {
-                        "text": prompt
+                        "text": prompt,
                     }
                 ],
             }
@@ -394,7 +799,10 @@ def ask_gemini(prompt):
 
     data = json.dumps(payload).encode("utf-8")
 
-    url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+    url = (
+        f"{GEMINI_URL}"
+        f"?key={GEMINI_API_KEY}"
+    )
 
     request = urllib.request.Request(
         url,
@@ -409,14 +817,21 @@ def ask_gemini(prompt):
 
         with urllib.request.urlopen(
             request,
-            timeout=90
+            timeout=90,
         ) as response:
 
-            response_data = response.read().decode("utf-8")
+            response_data = (
+                response
+                .read()
+                .decode("utf-8")
+            )
 
         result = json.loads(response_data)
 
-        candidates = result.get("candidates", [])
+        candidates = result.get(
+            "candidates",
+            [],
+        )
 
         if not candidates:
             raise RuntimeError(
@@ -438,7 +853,9 @@ def ask_gemini(prompt):
             if text:
                 answer_parts.append(text)
 
-        answer = "".join(answer_parts).strip()
+        answer = "".join(
+            answer_parts
+        ).strip()
 
         if not answer:
             raise RuntimeError(
@@ -451,11 +868,12 @@ def ask_gemini(prompt):
 
         error_body = error.read().decode(
             "utf-8",
-            errors="ignore"
+            errors="ignore",
         )
 
         raise RuntimeError(
-            f"Gemini HTTP {error.code}: {error_body[:500]}"
+            f"Gemini HTTP {error.code}: "
+            f"{error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
@@ -492,9 +910,13 @@ def ask_openrouter(prompt):
         OPENROUTER_URL,
         data=data,
         headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Authorization": (
+                f"Bearer {OPENROUTER_API_KEY}"
+            ),
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://my-ai-agent-8no8.onrender.com",
+            "HTTP-Referer": (
+                "https://my-ai-agent-8no8.onrender.com"
+            ),
             "X-Title": "My AI Agent",
         },
         method="POST",
@@ -504,14 +926,21 @@ def ask_openrouter(prompt):
 
         with urllib.request.urlopen(
             request,
-            timeout=90
+            timeout=90,
         ) as response:
 
-            response_data = response.read().decode("utf-8")
+            response_data = (
+                response
+                .read()
+                .decode("utf-8")
+            )
 
         result = json.loads(response_data)
 
-        choices = result.get("choices", [])
+        choices = result.get(
+            "choices",
+            [],
+        )
 
         if not choices:
             raise RuntimeError(
@@ -520,12 +949,12 @@ def ask_openrouter(prompt):
 
         message = choices[0].get(
             "message",
-            {}
+            {},
         )
 
         answer = message.get(
             "content",
-            ""
+            "",
         )
 
         if not answer:
@@ -539,11 +968,12 @@ def ask_openrouter(prompt):
 
         error_body = error.read().decode(
             "utf-8",
-            errors="ignore"
+            errors="ignore",
         )
 
         raise RuntimeError(
-            f"OpenRouter HTTP {error.code}: {error_body[:500]}"
+            f"OpenRouter HTTP {error.code}: "
+            f"{error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
@@ -572,7 +1002,11 @@ def ask_ai(prompt):
 
             answer = ask_gemini(prompt)
 
-            return answer, "Gemini"
+            return (
+                answer,
+                "Gemini",
+                GEMINI_MODEL,
+            )
 
         except Exception as error:
 
@@ -588,7 +1022,11 @@ def ask_ai(prompt):
 
             answer = ask_openrouter(prompt)
 
-            return answer, "OpenRouter"
+            return (
+                answer,
+                "OpenRouter",
+                OPENROUTER_MODEL,
+            )
 
         except Exception as error:
 
@@ -601,11 +1039,13 @@ def ask_ai(prompt):
     errors = []
 
     if gemini_error:
+
         errors.append(
             f"Gemini: {gemini_error}"
         )
 
     if openrouter_error:
+
         errors.append(
             f"OpenRouter: {openrouter_error}"
         )
@@ -646,6 +1086,45 @@ def build_memory():
 
 
 # ============================================================
+# SHOW DATABASE STATUS
+# ============================================================
+
+if st.session_state.database_error:
+
+    st.warning(
+        "PostgreSQL initialization issue: "
+        f"{st.session_state.database_error}"
+    )
+
+
+# ============================================================
+# SHOW CHAT HISTORY
+# ============================================================
+
+for message in st.session_state.messages:
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
+        )
+
+        if message["role"] == "assistant":
+
+            provider = message.get(
+                "provider"
+            )
+
+            if provider:
+
+                st.caption(
+                    f"Powered by {provider}"
+                )
+
+
+# ============================================================
 # CHAT INPUT
 # ============================================================
 
@@ -661,7 +1140,7 @@ user_input = st.chat_input(
 if user_input:
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE
+    # SAVE USER MESSAGE TO SESSION
     # --------------------------------------------------------
 
     st.session_state.messages.append(
@@ -671,8 +1150,40 @@ if user_input:
         }
     )
 
+    # --------------------------------------------------------
+    # SHOW USER MESSAGE
+    # --------------------------------------------------------
+
     with st.chat_message("user"):
+
         st.markdown(user_input)
+
+    # --------------------------------------------------------
+    # SAVE USER MESSAGE TO POSTGRESQL
+    # --------------------------------------------------------
+
+    user_message_id = None
+
+    if (
+        st.session_state.database_initialized
+        and st.session_state.conversation_id
+    ):
+
+        try:
+
+            user_message_id = save_message(
+                conversation_id=(
+                    st.session_state.conversation_id
+                ),
+                role="user",
+                content=user_input,
+            )
+
+        except Exception as error:
+
+            st.session_state.database_error = str(
+                error
+            )
 
     # --------------------------------------------------------
     # BUILD MEMORY
@@ -697,7 +1208,7 @@ if user_input:
             + json.dumps(
                 database_result,
                 indent=2,
-                default=str
+                default=str,
             )
         )
 
@@ -734,7 +1245,10 @@ if user_input:
     # OPTIONAL WEB SEARCH
     # --------------------------------------------------------
 
-    if should_search and TAVILY_API_KEY:
+    if (
+        should_search
+        and TAVILY_API_KEY
+    ):
 
         try:
 
@@ -742,18 +1256,21 @@ if user_input:
                 "Web par search kar raha hoon..."
             ):
 
-                search_answer, search_results = search_web(
+                (
+                    search_answer,
+                    search_results,
+                ) = search_web(
                     user_input
                 )
 
             web_context = (
-                f"WEB SEARCH ANSWER:\n"
+                "WEB SEARCH ANSWER:\n"
                 f"{search_answer}\n\n"
-                f"WEB SOURCES:\n"
+                "WEB SOURCES:\n"
                 f"{search_results}"
             )
 
-        except Exception as error:
+        except Exception:
 
             web_context = (
                 "Web search failed. "
@@ -820,9 +1337,51 @@ Respond directly to the latest user request.
 
         with st.spinner("Thinking..."):
 
+            run_id = None
+            assistant_message_id = None
+
             try:
 
-                answer, provider = ask_ai(prompt)
+                # ------------------------------------------------
+                # AI RESPONSE
+                # ------------------------------------------------
+
+                (
+                    answer,
+                    provider,
+                    model,
+                ) = ask_ai(
+                    prompt
+                )
+
+                # ------------------------------------------------
+                # START AGENT RUN RECORD
+                # ------------------------------------------------
+
+                if (
+                    st.session_state.database_initialized
+                    and st.session_state.conversation_id
+                ):
+
+                    try:
+
+                        run_id = start_agent_run(
+                            conversation_id=(
+                                st.session_state.conversation_id
+                            ),
+                            provider=provider,
+                            model=model,
+                        )
+
+                    except Exception as error:
+
+                        st.session_state.database_error = str(
+                            error
+                        )
+
+                # ------------------------------------------------
+                # DISPLAY RESPONSE
+                # ------------------------------------------------
 
                 st.markdown(answer)
 
@@ -831,11 +1390,13 @@ Respond directly to the latest user request.
                 ]
 
                 if web_context:
+
                     provider_parts.append(
                         "Tavily Web Search"
                     )
 
                 if database_result is not None:
+
                     provider_parts.append(
                         "PostgreSQL"
                     )
@@ -849,7 +1410,7 @@ Respond directly to the latest user request.
                 )
 
                 # ------------------------------------------------
-                # SAVE ASSISTANT RESPONSE
+                # SAVE ASSISTANT RESPONSE TO SESSION
                 # ------------------------------------------------
 
                 st.session_state.messages.append(
@@ -864,7 +1425,76 @@ Respond directly to the latest user request.
                     provider_text
                 )
 
+                # ------------------------------------------------
+                # SAVE ASSISTANT RESPONSE TO DATABASE
+                # ------------------------------------------------
+
+                if (
+                    st.session_state.database_initialized
+                    and st.session_state.conversation_id
+                ):
+
+                    try:
+
+                        assistant_message_id = (
+                            save_message(
+                                conversation_id=(
+                                    st.session_state.conversation_id
+                                ),
+                                role="assistant",
+                                content=answer,
+                                provider=provider_text,
+                            )
+                        )
+
+                    except Exception as error:
+
+                        st.session_state.database_error = str(
+                            error
+                        )
+
+                # ------------------------------------------------
+                # FINISH AGENT RUN
+                # ------------------------------------------------
+
+                if run_id:
+
+                    try:
+
+                        finish_agent_run(
+                            run_id=run_id,
+                            status="success",
+                            message_id=(
+                                assistant_message_id
+                            ),
+                        )
+
+                    except Exception as error:
+
+                        st.session_state.database_error = str(
+                            error
+                        )
+
             except Exception as error:
+
+                # ------------------------------------------------
+                # AGENT RUN FAILURE
+                # ------------------------------------------------
+
+                if run_id:
+
+                    try:
+
+                        finish_agent_run(
+                            run_id=run_id,
+                            status="failed",
+                            error_message=str(
+                                error
+                            ),
+                        )
+
+                    except Exception:
+                        pass
 
                 st.error(
                     "AI service temporarily unavailable."
