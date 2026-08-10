@@ -34,6 +34,10 @@ GROQ_API_KEY = os.getenv(
     "GROQ_API_KEY"
 )
 
+CEREBRAS_API_KEY = os.getenv(
+    "CEREBRAS_API_KEY"
+)
+
 
 # ============================================================
 # AI MODELS
@@ -57,6 +61,11 @@ OPENROUTER_MODEL = os.getenv(
 GROQ_MODEL = os.getenv(
     "GROQ_MODEL",
     "llama-3.1-8b-instant",
+)
+
+CEREBRAS_MODEL = os.getenv(
+    "CEREBRAS_MODEL",
+    "llama-3.1-8b",
 )
 
 
@@ -109,6 +118,10 @@ OPENROUTER_URL = (
 
 GROQ_URL = (
     "https://api.groq.com/openai/v1/chat/completions"
+)
+
+CEREBRAS_URL = (
+    "https://api.cerebras.ai/v1/chat/completions"
 )
 
 TAVILY_URL = (
@@ -192,6 +205,10 @@ def is_groq_configured():
     return bool(GROQ_API_KEY)
 
 
+def is_cerebras_configured():
+    return bool(CEREBRAS_API_KEY)
+
+
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
 
@@ -210,6 +227,7 @@ def get_config_status():
         "gemini_2": is_gemini_2_configured(),
         "openrouter": is_openrouter_configured(),
         "groq": is_groq_configured(),
+        "cerebras": is_cerebras_configured(),
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
