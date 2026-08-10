@@ -220,11 +220,6 @@ def initialize_database():
         """,
 
         """
-        CREATE INDEX IF NOT EXISTS idx_messages_created_at
-        ON messages(created_at DESC);
-        """,
-
-        """
         CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation_id
         ON agent_runs(conversation_id);
         """,
@@ -780,100 +775,10 @@ def get_current_conversation_history(
 # MEMORY SEARCH
 # ============================================================
 
-def _format_memory_rows(rows, match_type):
-    results = []
-
-    for row in rows:
-        result = {
-            "id": row[0],
-            "role": row[1],
-            "content": row[2],
-            "provider": row[3],
-            "created_at": (
-                row[4].isoformat()
-                if row[4]
-                else None
-            ),
-            "conversation_id": row[5],
-            "conversation_title": row[6],
-            "match_type": match_type,
-        }
-
-        if len(row) > 7:
-            result["relevance"] = float(row[7] or 0)
-
-        results.append(result)
-
-    return results
-
-
-def get_user_recent_memory(limit=30):
-    """
-    Retrieve recent messages belonging to the current user across
-    all conversations. This is the broad fallback for questions such
-    as "What do you remember about me?"
-    """
-
-    user_id = st.session_state.user_id
-
-    if not user_id:
-        return []
-
-    safe_limit = max(
-        1,
-        min(int(limit), 100),
-    )
-
-    rows = database_query(
-        f"""
-        SELECT
-            m.id,
-            m.role,
-            m.content,
-            m.provider,
-            m.created_at,
-            c.id AS conversation_id,
-            c.title AS conversation_title
-        FROM messages AS m
-        INNER JOIN conversations AS c
-            ON c.id = m.conversation_id
-        WHERE c.user_id = %s
-        ORDER BY
-            m.created_at DESC,
-            m.id DESC
-        LIMIT {safe_limit};
-        """,
-        (user_id,),
-        fetch="all",
-    )
-
-    return _format_memory_rows(
-        list(reversed(rows)),
-        "recent",
-    )
-
-
 def search_memory(
     user_input,
     limit=20,
 ):
-    """
-    PostgreSQL Memory Retrieval Router.
-
-    Route 1:
-        Exact phrase match across every conversation belonging
-        to the current user.
-
-    Route 2:
-        PostgreSQL full-text relevance search across every user
-        conversation.
-
-    Route 3:
-        Recent user-level memory fallback across every conversation.
-
-    The current conversation is ranked first when exact/relevance
-    results contain it, but it is never the only searchable scope.
-    """
 
     if not st.session_state.user_id:
         return []
@@ -888,41 +793,16 @@ def search_memory(
         min(int(limit), 50),
     )
 
+    # --------------------------------------------------------
+    # MEMORY RETRIEVAL ROUTER
+    # --------------------------------------------------------
+    # Memory is retrieved at USER level, not only at the
+    # current conversation level. This allows the agent to
+    # remember information from previous conversations.
+    # --------------------------------------------------------
+
     user_id = st.session_state.user_id
-    current_conversation_id = (
-        st.session_state.conversation_id
-    )
-
-    # --------------------------------------------------------
-    # ROUTE 0: Broad personal-memory request
-    # --------------------------------------------------------
-    # Generic memory questions should not search for the literal
-    # words "what do you remember". Instead, return recent
-    # user-level memories for the model to interpret.
-    # --------------------------------------------------------
-
-    broad_memory_request = any(
-        phrase in query_text.lower()
-        for phrase in [
-            "what do you remember",
-            "what did i tell you",
-            "what did i tell u",
-            "show my memory",
-            "show saved memory",
-            "my saved memory",
-            "saved memory",
-            "what is in memory",
-            "conversation memory",
-            "previous conversation",
-            "from previous conversation",
-            "from our previous conversation",
-        ]
-    )
-
-    if broad_memory_request:
-        return get_user_recent_memory(
-            limit=safe_limit
-        )
+    current_conversation_id = st.session_state.conversation_id
 
     # --------------------------------------------------------
     # ROUTE 1: Exact / phrase match across ALL user conversations
@@ -961,84 +841,150 @@ def search_memory(
     )
 
     if rows:
-        return _format_memory_rows(
-            list(reversed(rows)),
-            "exact",
-        )
+        results = []
+
+        for row in reversed(rows):
+            results.append(
+                {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "provider": row[3],
+                    "created_at": (
+                        row[4].isoformat()
+                        if row[4]
+                        else None
+                    ),
+                    "conversation_id": row[5],
+                    "conversation_title": row[6],
+                    "match_type": "exact",
+                }
+            )
+
+        return results
 
     # --------------------------------------------------------
     # ROUTE 2: PostgreSQL full-text relevance search
     # --------------------------------------------------------
 
-    try:
-        rows = database_query(
-            f"""
-            SELECT
-                m.id,
-                m.role,
-                m.content,
-                m.provider,
-                m.created_at,
-                c.id AS conversation_id,
-                c.title AS conversation_title,
-                ts_rank_cd(
-                    to_tsvector(
-                        'simple',
-                        COALESCE(m.content, '')
-                    ),
-                    plainto_tsquery(
-                        'simple',
-                        %s
-                    )
-                ) AS relevance
-            FROM messages AS m
-            INNER JOIN conversations AS c
-                ON c.id = m.conversation_id
-            WHERE c.user_id = %s
-              AND to_tsvector(
-                    'simple',
-                    COALESCE(m.content, '')
-                  ) @@ plainto_tsquery(
-                    'simple',
-                    %s
-                  )
-            ORDER BY
-                CASE
-                    WHEN m.conversation_id = %s THEN 0
-                    ELSE 1
-                END,
-                relevance DESC,
-                m.created_at DESC,
-                m.id DESC
-            LIMIT {safe_limit};
-            """,
-            (
-                query_text,
-                user_id,
-                query_text,
-                current_conversation_id,
-            ),
-            fetch="all",
-        )
+    rows = database_query(
+        f"""
+        SELECT
+            m.id,
+            m.role,
+            m.content,
+            m.provider,
+            m.created_at,
+            c.id AS conversation_id,
+            c.title AS conversation_title,
+            ts_rank_cd(
+                to_tsvector('simple', m.content),
+                websearch_to_tsquery('simple', %s)
+            ) AS relevance
+        FROM messages AS m
+        INNER JOIN conversations AS c
+            ON c.id = m.conversation_id
+        WHERE c.user_id = %s
+          AND to_tsvector('simple', m.content) @@
+              websearch_to_tsquery('simple', %s)
+        ORDER BY
+            CASE
+                WHEN m.conversation_id = %s THEN 0
+                ELSE 1
+            END,
+            relevance DESC,
+            m.created_at DESC,
+            m.id DESC
+        LIMIT {safe_limit};
+        """,
+        (
+            query_text,
+            user_id,
+            query_text,
+            current_conversation_id,
+        ),
+        fetch="all",
+    )
 
-        if rows:
-            return _format_memory_rows(
-                list(reversed(rows)),
-                "relevance",
+    if rows:
+        results = []
+
+        for row in reversed(rows):
+            results.append(
+                {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "provider": row[3],
+                    "created_at": (
+                        row[4].isoformat()
+                        if row[4]
+                        else None
+                    ),
+                    "conversation_id": row[5],
+                    "conversation_title": row[6],
+                    "match_type": "relevance",
+                    "relevance": float(row[7] or 0),
+                }
             )
 
-    except Exception:
-        # A malformed/unsupported search phrase must not break
-        # the normal AI chat. Continue to the recent-memory route.
-        pass
+        return results
 
     # --------------------------------------------------------
-    # ROUTE 3: Recent user-level memory fallback
+    # ROUTE 3: Recent user memory fallback across conversations
     # --------------------------------------------------------
 
-    return get_user_recent_memory(
-        limit=safe_limit
+    recent_rows = database_query(
+        f"""
+        SELECT
+            m.id,
+            m.role,
+            m.content,
+            m.provider,
+            m.created_at,
+            c.id AS conversation_id,
+            c.title AS conversation_title
+        FROM messages AS m
+        INNER JOIN conversations AS c
+            ON c.id = m.conversation_id
+        WHERE c.user_id = %s
+        ORDER BY
+            CASE
+                WHEN m.conversation_id = %s THEN 0
+                ELSE 1
+            END,
+            m.created_at DESC,
+            m.id DESC
+        LIMIT {safe_limit};
+        """,
+        (
+            user_id,
+            current_conversation_id,
+        ),
+        fetch="all",
     )
+
+    results = []
+
+    for row in reversed(recent_rows):
+        results.append(
+            {
+                "id": row[0],
+                "role": row[1],
+                "content": row[2],
+                "provider": row[3],
+                "created_at": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+                "conversation_id": row[5],
+                "conversation_title": row[6],
+                "match_type": "recent_fallback",
+            }
+        )
+
+    return results
 
 
 # ============================================================
@@ -1263,7 +1209,7 @@ def run_database_tool(
 
             result = {
                 "status": "success",
-                "memory": get_user_recent_memory(
+                **get_current_conversation_history(
                     limit=50
                 ),
             }
