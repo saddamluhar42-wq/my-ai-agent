@@ -26,6 +26,10 @@ OPENROUTER_API_KEY = os.getenv(
     "OPENROUTER_API_KEY"
 )
 
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY"
+)
+
 GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
     "gemini-2.5-flash",
@@ -34,6 +38,11 @@ GEMINI_MODEL = os.getenv(
 OPENROUTER_MODEL = os.getenv(
     "OPENROUTER_MODEL",
     "openrouter/free",
+)
+
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "llama-3.1-8b-instant",
 )
 
 
@@ -76,6 +85,10 @@ GEMINI_URL = (
 
 OPENROUTER_URL = (
     "https://openrouter.ai/api/v1/chat/completions"
+)
+
+GROQ_URL = (
+    "https://api.groq.com/openai/v1/chat/completions"
 )
 
 TAVILY_URL = (
@@ -151,6 +164,10 @@ def is_openrouter_configured():
     return bool(OPENROUTER_API_KEY)
 
 
+def is_groq_configured():
+    return bool(GROQ_API_KEY)
+
+
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
 
@@ -167,6 +184,7 @@ def get_config_status():
     return {
         "gemini": is_gemini_configured(),
         "openrouter": is_openrouter_configured(),
+        "groq": is_groq_configured(),
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
