@@ -40,7 +40,7 @@ st.caption("Online AI Agent • Gemini + OpenRouter")
 
 
 # ============================================================
-# API CLIENTS
+# GEMINI CLIENT
 # ============================================================
 
 gemini_client = None
@@ -61,42 +61,15 @@ if "messages" not in st.session_state:
 
 
 # ============================================================
-# SHOW CHAT HISTORY
-# ============================================================
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-
-# ============================================================
-# GEMINI FUNCTION
-# ============================================================
-
-def ask_gemini(prompt):
-    if not gemini_client:
-        raise RuntimeError("Gemini API key is not configured.")
-
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
-
-    answer = response.text
-
-    if not answer:
-        raise RuntimeError("Gemini returned an empty response.")
-
-    return answer
-
-
-# ============================================================
 # OPENROUTER FUNCTION
 # ============================================================
 
 def ask_openrouter(prompt):
+
     if not OPENROUTER_API_KEY:
-        raise RuntimeError("OpenRouter API key is not configured.")
+        raise RuntimeError(
+            "OPENROUTER_API_KEY is not configured."
+        )
 
     payload = {
         "model": OPENROUTER_MODEL,
@@ -123,86 +96,207 @@ def ask_openrouter(prompt):
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
-            response_data = response.read().decode("utf-8")
+
+        with urllib.request.urlopen(
+            request,
+            timeout=90
+        ) as response:
+
+            response_data = (
+                response
+                .read()
+                .decode("utf-8")
+            )
 
         result = json.loads(response_data)
 
-        answer = result["choices"][0]["message"]["content"]
+        answer = (
+            result["choices"][0]["message"]["content"]
+        )
 
         if not answer:
-            raise RuntimeError("OpenRouter returned an empty response.")
+            raise RuntimeError(
+                "OpenRouter returned an empty response."
+            )
 
         return answer
 
     except urllib.error.HTTPError as error:
-        error_body = error.read().decode("utf-8", errors="ignore")
+
+        error_body = (
+            error
+            .read()
+            .decode(
+                "utf-8",
+                errors="ignore"
+            )
+        )
 
         raise RuntimeError(
-            f"OpenRouter HTTP {error.code}: {error_body[:500]}"
+            f"OpenRouter HTTP {error.code}: "
+            f"{error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
+
         raise RuntimeError(
-            f"OpenRouter connection error: {error.reason}"
+            f"OpenRouter connection error: "
+            f"{error.reason}"
         )
 
 
 # ============================================================
-# AI ROUTER
+# GEMINI FUNCTION
+# ============================================================
+
+def ask_gemini(prompt):
+
+    if not gemini_client:
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured."
+        )
+
+    response = (
+        gemini_client
+        .models
+        .generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+    )
+
+    answer = response.text
+
+    if not answer:
+        raise RuntimeError(
+            "Gemini returned an empty response."
+        )
+
+    return answer
+
+
+# ============================================================
+# NORMAL AI ROUTER
 # ============================================================
 
 def ask_ai(prompt):
+
     gemini_error = None
-    openrouter_error = None
 
     # --------------------------------------------------------
-    # 1. TRY GEMINI FIRST
+    # GEMINI FIRST
     # --------------------------------------------------------
 
     if GEMINI_API_KEY:
+
         try:
+
             answer = ask_gemini(prompt)
+
             return answer, "Gemini"
+
         except Exception as error:
+
             gemini_error = str(error)
 
     # --------------------------------------------------------
-    # 2. FALLBACK TO OPENROUTER
+    # OPENROUTER FALLBACK
     # --------------------------------------------------------
 
     if OPENROUTER_API_KEY:
+
         try:
+
             answer = ask_openrouter(prompt)
+
             return answer, "OpenRouter"
+
         except Exception as error:
-            openrouter_error = str(error)
 
-    # --------------------------------------------------------
-    # 3. BOTH FAILED
-    # --------------------------------------------------------
+            raise RuntimeError(
+                "Gemini failed: "
+                f"{gemini_error}\n\n"
+                "OpenRouter also failed: "
+                f"{error}"
+            )
 
-    errors = []
+    raise RuntimeError(
+        "No AI provider is configured."
+    )
 
-    if gemini_error:
-        errors.append(f"Gemini: {gemini_error}")
 
-    if openrouter_error:
-        errors.append(f"OpenRouter: {openrouter_error}")
+# ============================================================
+# SHOW CHAT HISTORY
+# ============================================================
 
-    if not errors:
-        raise RuntimeError(
-            "Neither GEMINI_API_KEY nor OPENROUTER_API_KEY is configured."
+for message in st.session_state.messages:
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
         )
 
-    raise RuntimeError(" | ".join(errors))
+
+# ============================================================
+# TEMPORARY OPENROUTER TEST
+# ============================================================
+
+st.divider()
+
+st.subheader("OpenRouter Connection Test")
+
+if st.button(
+    "Test OpenRouter",
+    use_container_width=True
+):
+
+    with st.spinner(
+        "Testing OpenRouter..."
+    ):
+
+        try:
+
+            test_prompt = """
+Reply with exactly:
+
+OpenRouter connection successful.
+"""
+
+            answer = ask_openrouter(
+                test_prompt
+            )
+
+            st.success(
+                "OpenRouter is working."
+            )
+
+            st.markdown(answer)
+
+            st.caption(
+                "Powered by OpenRouter"
+            )
+
+        except Exception as error:
+
+            st.error(
+                "OpenRouter test failed."
+            )
+
+            st.code(
+                str(error)
+            )
 
 
 # ============================================================
 # CHAT INPUT
 # ============================================================
 
-user_input = st.chat_input("Apne AI Agent ko command do...")
+user_input = st.chat_input(
+    "Apne AI Agent ko command do..."
+)
 
 
 if user_input:
@@ -219,6 +313,7 @@ if user_input:
     )
 
     with st.chat_message("user"):
+
         st.markdown(user_input)
 
     # --------------------------------------------------------
@@ -226,8 +321,10 @@ if user_input:
     # --------------------------------------------------------
 
     conversation = "\n".join(
-        f'{message["role"].upper()}: {message["content"]}'
-        for message in st.session_state.messages
+        f'{message["role"].upper()}: '
+        f'{message["content"]}'
+        for message
+        in st.session_state.messages
     )
 
     prompt = f"""
@@ -251,20 +348,26 @@ Respond to the latest user request.
 """
 
     # --------------------------------------------------------
-    # GENERATE RESPONSE
+    # AI RESPONSE
     # --------------------------------------------------------
 
     with st.chat_message("assistant"):
 
-        with st.spinner("Thinking..."):
+        with st.spinner(
+            "Thinking..."
+        ):
 
             try:
-                answer, provider = ask_ai(prompt)
+
+                answer, provider = ask_ai(
+                    prompt
+                )
 
                 st.markdown(answer)
 
-                # Small provider indicator
-                st.caption(f"Powered by {provider}")
+                st.caption(
+                    f"Powered by {provider}"
+                )
 
                 st.session_state.messages.append(
                     {
@@ -279,4 +382,6 @@ Respond to the latest user request.
                     "AI service temporarily unavailable."
                 )
 
-                st.caption(str(error))
+                st.code(
+                    str(error)
+                )
