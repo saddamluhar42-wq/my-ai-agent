@@ -1,6 +1,7 @@
 from ai import cerebras
 from ai import gemini
 from ai import groq
+from ai import mistral
 from ai import openrouter
 
 
@@ -23,6 +24,9 @@ def get_available_providers():
     if cerebras.is_configured():
         providers.append("Cerebras")
 
+    if mistral.is_configured():
+        providers.append("Mistral")
+
     return providers
 
 
@@ -41,6 +45,7 @@ def generate(
     3. OpenRouter
     4. Groq
     5. Cerebras
+    6. Mistral
     """
 
     providers = []
@@ -60,6 +65,9 @@ def generate(
         elif provider == "cerebras":
             providers.append("Cerebras")
 
+        elif provider == "mistral":
+            providers.append("Mistral")
+
     if "Gemini" not in providers:
         providers.append("Gemini")
 
@@ -71,6 +79,9 @@ def generate(
 
     if "Cerebras" not in providers:
         providers.append("Cerebras")
+
+    if "Mistral" not in providers:
+        providers.append("Mistral")
 
     errors = []
 
@@ -188,6 +199,34 @@ def generate(
                     f"Cerebras: {error}"
                 )
 
+        elif provider == "Mistral":
+
+            if not mistral.is_configured():
+                errors.append(
+                    "Mistral: API key not configured."
+                )
+                continue
+
+            try:
+                answer = mistral.generate(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+                return {
+                    "answer": answer,
+                    "provider": "Mistral",
+                    "model": mistral.get_provider_info()[
+                        "model"
+                    ],
+                }
+
+            except Exception as error:
+                errors.append(
+                    f"Mistral: {error}"
+                )
+
     if not errors:
         raise AgentError(
             "No AI provider is configured."
@@ -217,4 +256,5 @@ def provider_status():
         "OpenRouter": openrouter.is_configured(),
         "Groq": groq.is_configured(),
         "Cerebras": cerebras.is_configured(),
+        "Mistral": mistral.is_configured(),
     }
