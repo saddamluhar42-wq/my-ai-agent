@@ -38,6 +38,10 @@ CEREBRAS_API_KEY = os.getenv(
     "CEREBRAS_API_KEY"
 )
 
+MISTRAL_API_KEY = os.getenv(
+    "MISTRAL_API_KEY"
+)
+
 
 # ============================================================
 # AI MODELS
@@ -66,6 +70,11 @@ GROQ_MODEL = os.getenv(
 CEREBRAS_MODEL = os.getenv(
     "CEREBRAS_MODEL",
     "llama-3.1-8b",
+)
+
+MISTRAL_MODEL = os.getenv(
+    "MISTRAL_MODEL",
+    "mistral-small-latest",
 )
 
 
@@ -122,6 +131,10 @@ GROQ_URL = (
 
 CEREBRAS_URL = (
     "https://api.cerebras.ai/v1/chat/completions"
+)
+
+MISTRAL_URL = (
+    "https://api.mistral.ai/v1/chat/completions"
 )
 
 TAVILY_URL = (
@@ -209,6 +222,10 @@ def is_cerebras_configured():
     return bool(CEREBRAS_API_KEY)
 
 
+def is_mistral_configured():
+    return bool(MISTRAL_API_KEY)
+
+
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
 
@@ -228,6 +245,7 @@ def get_config_status():
         "openrouter": is_openrouter_configured(),
         "groq": is_groq_configured(),
         "cerebras": is_cerebras_configured(),
+        "mistral": is_mistral_configured(),
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
