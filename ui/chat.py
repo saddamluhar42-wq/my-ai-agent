@@ -21,6 +21,10 @@ from files.processor import (
 )
 
 
+# ============================================================
+# FILE SUPPORT
+# ============================================================
+
 ALLOWED_FILE_TYPES = [
     "txt",
     "md",
@@ -35,6 +39,10 @@ ALLOWED_FILE_TYPES = [
     "docx",
 ]
 
+
+# ============================================================
+# IMAGE REQUEST DETECTION
+# ============================================================
 
 IMAGE_REQUEST_PHRASES = [
     "generate image",
@@ -92,7 +100,12 @@ NO_WORDS = [
 ]
 
 
+# ============================================================
+# STATE
+# ============================================================
+
 def initialize_chat_state():
+
     defaults = {
         "messages": [],
         "uploaded_files": [],
@@ -103,29 +116,162 @@ def initialize_chat_state():
         "user_id": None,
         "preferred_provider": "Auto",
         "pending_image_prompt": None,
+        "show_provider_info": True,
+        "enable_chat_memory": True,
+        "confirm_image_generation": True,
     }
 
     for key, value in defaults.items():
+
         if key not in st.session_state:
             st.session_state[key] = value
 
 
+# ============================================================
+# MAIN CHAT
+# ============================================================
+
 def render_chat():
+
     initialize_chat_state()
 
-    render_messages()
+    render_chat_header()
+
+    if not st.session_state.get("messages"):
+
+        render_empty_state()
+
+    else:
+
+        render_messages()
+
     render_composer()
 
 
+# ============================================================
+# CHAT HEADER
+# ============================================================
+
+def render_chat_header():
+
+    provider = st.session_state.get(
+        "preferred_provider",
+        "Auto",
+    )
+
+    if provider == "Auto":
+        provider_text = "Auto"
+    else:
+        provider_text = provider
+
+    st.markdown(
+        f"""
+        <div class="chat-header">
+            <div>
+                My AI Agent
+                <span style="
+                    color:#858585;
+                    font-weight:400;
+                    margin-left:8px;
+                ">
+                    {provider_text}
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# EMPTY STATE
+# ============================================================
+
+def render_empty_state():
+
+    st.markdown(
+        """
+        <div class="empty-state">
+
+            <div class="empty-state-icon">
+                ✦
+            </div>
+
+            <div class="empty-state-title">
+                How can I help you today?
+            </div>
+
+            <div class="empty-state-subtitle">
+                Ask anything, upload a file,
+                or request an image.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div style="
+            width:min(820px,92%);
+            margin:38px auto 0 auto;
+        ">
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        if st.button(
+            "Explain something",
+            use_container_width=True,
+            key="suggest_explain",
+        ):
+            handle_user_message(
+                "Explain something interesting to me."
+            )
+
+    with col2:
+
+        if st.button(
+            "Write something",
+            use_container_width=True,
+            key="suggest_write",
+        ):
+            handle_user_message(
+                "Help me write something useful."
+            )
+
+    with col3:
+
+        if st.button(
+            "Generate an image",
+            use_container_width=True,
+            key="suggest_image",
+        ):
+            handle_user_message(
+                "Generate an image of a beautiful cinematic landscape."
+            )
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# MESSAGE RENDERING
+# ============================================================
+
 def render_messages():
+
     messages = st.session_state.get(
         "messages",
         [],
     )
-
-    if not messages:
-        render_empty_state()
-        return
 
     for message_index, message in enumerate(messages):
 
@@ -146,82 +292,125 @@ def render_messages():
 
         with st.chat_message(role):
 
+            # =================================================
+            # IMAGE MESSAGE
+            # =================================================
+
             if message_type == "image":
 
-                image_data = message.get(
-                    "image",
+                render_image_message(
+                    message,
+                    message_index,
                 )
 
-                if image_data:
+                continue
 
-                    st.image(
-                        image_data,
-                        use_container_width=True,
-                    )
+            # =================================================
+            # TEXT MESSAGE
+            # =================================================
 
-                    st.download_button(
-                        label="Download Image",
-                        data=image_data,
-                        file_name=(
-                            "my_ai_agent_image.png"
-                        ),
-                        mime="image/png",
-                        key=(
-                            f"download_image_"
-                            f"{message_index}"
-                        ),
-                    )
+            if content:
+
+                st.markdown(
+                    content
+                )
+
+            # =================================================
+            # PROVIDER
+            # =================================================
+
+            if (
+                role == "assistant"
+                and st.session_state.get(
+                    "show_provider_info",
+                    True,
+                )
+            ):
 
                 provider = message.get(
-                    "provider",
-                )
-
-                model = message.get(
-                    "model",
+                    "provider"
                 )
 
                 if provider:
 
+                    model = message.get(
+                        "model"
+                    )
+
                     if model:
+
                         st.caption(
-                            f"Generated by "
                             f"{provider} • {model}"
                         )
 
                     else:
+
                         st.caption(
-                            f"Generated by {provider}"
+                            f"Powered by {provider}"
                         )
 
-                continue
 
-            if content:
-                st.markdown(content)
+# ============================================================
+# IMAGE MESSAGE
+# ============================================================
 
-            provider = message.get(
-                "provider",
-            )
+def render_image_message(
+    message,
+    message_index,
+):
 
-            if provider:
-                st.caption(
-                    f"Powered by {provider}"
-                )
-
-
-def render_empty_state():
-    st.markdown(
-        """
-        ✦
-
-        How can I help you today?
-
-
-        Ask anything or attach a file
-        using the + button below.
-        """,
-        unsafe_allow_html=True,
+    image_data = message.get(
+        "image"
     )
 
+    if not image_data:
+        return
+
+    st.image(
+        image_data,
+        use_container_width=True,
+    )
+
+    st.download_button(
+        label="Download image",
+        data=image_data,
+        file_name=(
+            f"my_ai_agent_image_"
+            f"{message_index}.png"
+        ),
+        mime="image/png",
+        key=(
+            f"download_image_"
+            f"{message_index}"
+        ),
+    )
+
+    provider = message.get(
+        "provider"
+    )
+
+    model = message.get(
+        "model"
+    )
+
+    if provider:
+
+        if model:
+
+            st.caption(
+                f"Generated by {provider} • {model}"
+            )
+
+        else:
+
+            st.caption(
+                f"Generated by {provider}"
+            )
+
+
+# ============================================================
+# COMPOSER
+# ============================================================
 
 def render_composer():
 
@@ -243,20 +432,27 @@ def render_composer():
     )
 
     if files:
+
         process_uploaded_files(
             files
         )
 
     if not text and files:
+
         text = build_file_message(
             files
         )
 
     if text:
+
         handle_user_message(
             text
         )
 
+
+# ============================================================
+# FILE MESSAGE
+# ============================================================
 
 def build_file_message(files):
 
@@ -266,18 +462,25 @@ def build_file_message(files):
     ]
 
     if len(names) == 1:
+
         return (
             "Please analyze the attached "
             f"file: {names[0]}"
         )
 
-    joined_names = ", ".join(names)
+    joined_names = ", ".join(
+        names
+    )
 
     return (
         "Please analyze these attached "
         f"files: {joined_names}"
     )
 
+
+# ============================================================
+# FILE PROCESSING
+# ============================================================
 
 def process_uploaded_files(
     uploaded_files,
@@ -335,6 +538,10 @@ def process_uploaded_files(
         )
 
 
+# ============================================================
+# IMAGE REQUEST
+# ============================================================
+
 def is_image_request(prompt):
 
     text = prompt.lower().strip()
@@ -347,18 +554,24 @@ def is_image_request(prompt):
     return False
 
 
+# ============================================================
+# CONFIRMATION
+# ============================================================
+
 def is_yes_confirmation(prompt):
 
-    text = prompt.lower().strip()
-
-    return text in YES_WORDS
+    return (
+        prompt.lower().strip()
+        in YES_WORDS
+    )
 
 
 def is_no_confirmation(prompt):
 
-    text = prompt.lower().strip()
-
-    return text in NO_WORDS
+    return (
+        prompt.lower().strip()
+        in NO_WORDS
+    )
 
 
 def request_image_confirmation(
@@ -375,8 +588,9 @@ def request_image_confirmation(
         {
             "role": "assistant",
             "content": (
-                "Image generation request detected.\n\n"
-                "Kya main image generate karu?\n\n"
+                "I detected an image-generation "
+                "request.\n\n"
+                "Should I generate this image?\n\n"
                 "**Yes / No**"
             ),
         }
@@ -384,6 +598,10 @@ def request_image_confirmation(
 
     st.rerun()
 
+
+# ============================================================
+# PENDING IMAGE CONFIRMATION
+# ============================================================
 
 def handle_pending_image_confirmation(
     prompt,
@@ -397,6 +615,10 @@ def handle_pending_image_confirmation(
 
     if not pending_prompt:
         return False
+
+    # ========================================================
+    # YES
+    # ========================================================
 
     if is_yes_confirmation(prompt):
 
@@ -419,6 +641,10 @@ def handle_pending_image_confirmation(
 
         return True
 
+    # ========================================================
+    # NO
+    # ========================================================
+
     if is_no_confirmation(prompt):
 
         st.session_state[
@@ -440,8 +666,7 @@ def handle_pending_image_confirmation(
             {
                 "role": "assistant",
                 "content": (
-                    "Theek hai. Image generation "
-                    "cancel kar di gayi."
+                    "Image generation cancelled."
                 ),
             }
         )
@@ -449,6 +674,10 @@ def handle_pending_image_confirmation(
         st.rerun()
 
         return True
+
+    # ========================================================
+    # INVALID CONFIRMATION
+    # ========================================================
 
     st.session_state[
         "messages"
@@ -465,8 +694,8 @@ def handle_pending_image_confirmation(
         {
             "role": "assistant",
             "content": (
-                "Please **Yes** ya **No** mein "
-                "confirm karein."
+                "Please confirm with **Yes** "
+                "or **No**."
             ),
         }
     )
@@ -476,6 +705,10 @@ def handle_pending_image_confirmation(
     return True
 
 
+# ============================================================
+# IMAGE GENERATION
+# ============================================================
+
 def generate_confirmed_image(
     image_prompt,
 ):
@@ -483,6 +716,7 @@ def generate_confirmed_image(
     try:
 
         if not is_image_generation_available():
+
             raise AgentError(
                 "No image-generation provider "
                 "is configured."
@@ -511,10 +745,11 @@ def generate_confirmed_image(
             )
 
         image_data = result.get(
-            "image",
+            "image"
         )
 
         if not image_data:
+
             raise AgentError(
                 "Image generation returned "
                 "no image."
@@ -568,6 +803,10 @@ def generate_confirmed_image(
         st.rerun()
 
 
+# ============================================================
+# USER MESSAGE HANDLER
+# ============================================================
+
 def handle_user_message(
     prompt,
 ):
@@ -582,7 +821,7 @@ def handle_user_message(
     ] = prompt
 
     # ========================================================
-    # STEP 1: PENDING IMAGE CONFIRMATION
+    # PENDING IMAGE CONFIRMATION
     # ========================================================
 
     if st.session_state.get(
@@ -596,7 +835,7 @@ def handle_user_message(
         return
 
     # ========================================================
-    # STEP 2: IMAGE REQUEST
+    # IMAGE REQUEST
     # ========================================================
 
     if is_image_request(prompt):
@@ -617,7 +856,7 @@ def handle_user_message(
         return
 
     # ========================================================
-    # STEP 3: NORMAL TEXT AI
+    # NORMAL TEXT CHAT
     # ========================================================
 
     st.session_state[
@@ -651,12 +890,21 @@ def handle_user_message(
             )
         )
 
-        memory_context = (
-            build_memory_context(
-                conversation_id,
-                prompt,
+        if st.session_state.get(
+            "enable_chat_memory",
+            True,
+        ):
+
+            memory_context = (
+                build_memory_context(
+                    conversation_id,
+                    prompt,
+                )
             )
-        )
+
+        else:
+
+            memory_context = ""
 
         file_context = (
             st.session_state.get(
@@ -673,6 +921,7 @@ def handle_user_message(
         )
 
         if preferred_provider == "Auto":
+
             preferred_provider = None
 
         agent_prompt = (
@@ -699,10 +948,15 @@ def handle_user_message(
         )
 
         provider = result.get(
-            "provider",
+            "provider"
+        )
+
+        model = result.get(
+            "model"
         )
 
         if not answer:
+
             raise AgentError(
                 "AI returned an empty response."
             )
@@ -720,6 +974,7 @@ def handle_user_message(
                 "role": "assistant",
                 "content": answer,
                 "provider": provider,
+                "model": model,
             }
         )
 
@@ -737,13 +992,18 @@ def handle_user_message(
             {
                 "role": "assistant",
                 "content": (
-                    f"AI Agent error: {error}"
+                    f"AI Agent error:\n\n"
+                    f"{error}"
                 ),
             }
         )
 
         st.rerun()
 
+
+# ============================================================
+# DATABASE CONTEXT
+# ============================================================
 
 def ensure_database_context():
 
