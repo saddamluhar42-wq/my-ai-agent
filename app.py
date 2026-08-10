@@ -50,6 +50,10 @@ HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+OPENROUTER_VISION_MODEL = os.getenv(
+    "OPENROUTER_VISION_MODEL",
+    "qwen/qwen2.5-vl-32b-instruct:free",
+)
 HF_IMAGE_MODEL = os.getenv(
     "HF_IMAGE_MODEL",
     "stabilityai/stable-diffusion-3-medium-diffusers",
@@ -1171,93 +1175,268 @@ def save_uploaded_file_temporarily(uploaded_file):
     return temp.name
 
 
-def analyze_uploaded_files(files, user_prompt):
-    if not GEMINI_API_KEY:
+def _is_image_file(uploaded_file):
+    mime_type = (getattr(uploaded_file, "type", "") or "").lower()
+    name = (getattr(uploaded_file, "name", "") or "").lower()
+
+    if mime_type.startswith("image/"):
+        return True
+
+    return name.endswith(
+        (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+    )
+
+
+def _openrouter_image_analysis(files, user_prompt):
+    if not OPENROUTER_API_KEY:
         raise RuntimeError(
-            "Gemini API key is required for file analysis."
+            "OPENROUTER_API_KEY is not configured for image fallback."
         )
 
-    if genai is None:
+    image_files = [file for file in files if _is_image_file(file)]
+
+    if not image_files:
         raise RuntimeError(
-            "google-genai package is missing."
+            "OpenRouter fallback currently supports image analysis only."
         )
 
-    if not files:
-        return "", []
+    prompt = (user_prompt or "").strip()
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    uploaded_refs = []
-    temp_paths = []
+    if not prompt:
+        prompt = (
+            "Analyze the attached image(s) carefully. Explain what is visible, "
+            "important details, readable text, objects, people, setting, "
+            "visual style, and any useful observations. Be accurate and do "
+            "not invent details that are not visible."
+        )
+
+    content = [{"type": "text", "text": prompt}]
+
+    for uploaded_file in image_files:
+        raw_bytes = uploaded_file.getvalue()
+        if not raw_bytes:
+            continue
+
+        mime_type = (
+            getattr(uploaded_file, "type", None)
+            or "application/octet-stream"
+        )
+
+        encoded = base64.b64encode(raw_bytes).decode("ascii")
+        data_url = f"data:{mime_type};base64,{encoded}"
+
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": data_url,
+                },
+            }
+        )
+
+    if len(content) == 1:
+        raise RuntimeError("Attached image data could not be read.")
+
+    payload = {
+        "model": OPENROUTER_VISION_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": content,
+            }
+        ],
+        "temperature": 0.2,
+    }
+
+    request = urllib.request.Request(
+        OPENROUTER_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "HTTP-Referer": "https://my-ai-agent-8no8.onrender.com",
+            "X-Title": APP_NAME,
+        },
+        method="POST",
+    )
 
     try:
-        for uploaded_file in files:
-            temp_path = save_uploaded_file_temporarily(
-                uploaded_file
-            )
-            temp_paths.append(temp_path)
-
-            uploaded_ref = client.files.upload(
-                file=temp_path,
-                config={
-                    "mime_type": uploaded_file.type
-                },
+        with urllib.request.urlopen(request, timeout=120) as response:
+            result = json.loads(
+                response.read().decode("utf-8")
             )
 
-            uploaded_refs.append(
-                (
-                    uploaded_ref,
-                    uploaded_file.name,
-                    uploaded_file.type,
-                )
+        choices = result.get("choices", [])
+        if not choices:
+            raise RuntimeError(
+                "OpenRouter vision returned no choices."
             )
 
-        prompt = user_prompt.strip()
-
-        if not prompt:
-            prompt = (
-                "Analyze all attached files carefully. "
-                "Explain what they contain, important details, "
-                "text visible in images/documents, and useful "
-                "observations. For video, describe important "
-                "scenes, actions, objects, and sequence."
-            )
-
-        contents = []
-
-        for uploaded_ref, name, mime_type in uploaded_refs:
-            contents.append(
-                f"ATTACHED FILE: {name} ({mime_type})"
-            )
-            contents.append(uploaded_ref)
-
-        contents.append(prompt)
-
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
+        answer = (
+            choices[0]
+            .get("message", {})
+            .get("content", "")
         )
 
-        answer = (response.text or "").strip()
+        if isinstance(answer, list):
+            answer = "\n".join(
+                item.get("text", "")
+                for item in answer
+                if isinstance(item, dict) and item.get("text")
+            )
+
+        answer = str(answer or "").strip()
 
         if not answer:
             raise RuntimeError(
-                "Gemini returned an empty file analysis."
+                "OpenRouter vision returned an empty response."
             )
 
-        return answer, [
+        analyzed = [
             {
-                "name": name,
-                "mime_type": mime_type,
+                "name": file.name,
+                "mime_type": file.type,
             }
-            for _, name, mime_type in uploaded_refs
+            for file in image_files
         ]
 
-    finally:
-        for path in temp_paths:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+        return answer, analyzed
+
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(
+            "utf-8",
+            errors="ignore",
+        )
+        raise RuntimeError(
+            f"OpenRouter vision HTTP {exc.code}: {body[:900]}"
+        )
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            f"OpenRouter vision connection error: {exc.reason}"
+        )
+
+
+def analyze_uploaded_files(files, user_prompt):
+    if not files:
+        return "", [], "No File Provider", ""
+
+    gemini_error = None
+
+    # --------------------------------------------------------
+    # PRIMARY: GEMINI FILE API
+    # --------------------------------------------------------
+    if GEMINI_API_KEY and genai is not None:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        uploaded_refs = []
+        temp_paths = []
+
+        try:
+            for uploaded_file in files:
+                temp_path = save_uploaded_file_temporarily(
+                    uploaded_file
+                )
+                temp_paths.append(temp_path)
+
+                uploaded_ref = client.files.upload(
+                    file=temp_path,
+                    config={
+                        "mime_type": uploaded_file.type
+                    },
+                )
+
+                uploaded_refs.append(
+                    (
+                        uploaded_ref,
+                        uploaded_file.name,
+                        uploaded_file.type,
+                    )
+                )
+
+            prompt = (user_prompt or "").strip()
+
+            if not prompt:
+                prompt = (
+                    "Analyze all attached files carefully. "
+                    "Explain what they contain, important details, "
+                    "text visible in images/documents, and useful "
+                    "observations. For video, describe important "
+                    "scenes, actions, objects, and sequence."
+                )
+
+            contents = []
+
+            for uploaded_ref, name, mime_type in uploaded_refs:
+                contents.append(
+                    f"ATTACHED FILE: {name} ({mime_type})"
+                )
+                contents.append(uploaded_ref)
+
+            contents.append(prompt)
+
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+            )
+
+            answer = (response.text or "").strip()
+
+            if not answer:
+                raise RuntimeError(
+                    "Gemini returned an empty file analysis."
+                )
+
+            analyzed = [
+                {
+                    "name": name,
+                    "mime_type": mime_type,
+                }
+                for _, name, mime_type in uploaded_refs
+            ]
+
+            return (
+                answer,
+                analyzed,
+                "Gemini File Analysis",
+                GEMINI_MODEL,
+            )
+
+        except Exception as exc:
+            gemini_error = str(exc)
+
+        finally:
+            for path in temp_paths:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    elif not GEMINI_API_KEY:
+        gemini_error = "GEMINI_API_KEY is not configured."
+    elif genai is None:
+        gemini_error = "google-genai package is missing."
+
+    # --------------------------------------------------------
+    # FALLBACK: OPENROUTER VISION FOR IMAGES
+    # --------------------------------------------------------
+    try:
+        answer, analyzed = _openrouter_image_analysis(
+            files,
+            user_prompt,
+        )
+
+        return (
+            answer,
+            analyzed,
+            "OpenRouter Vision Fallback",
+            OPENROUTER_VISION_MODEL,
+        )
+
+    except Exception as fallback_error:
+        raise RuntimeError(
+            "File analysis failed on both providers.\n\n"
+            f"Gemini: {gemini_error or 'not available'}\n\n"
+            f"OpenRouter Vision: {fallback_error}"
+        )
 
 
 # ============================================================
@@ -2006,20 +2185,20 @@ if user_input:
             ):
                 run_id = start_agent_run(
                     st.session_state.conversation_id,
-                    "Gemini File Analysis",
+                    "File Analysis Router",
                     GEMINI_MODEL,
                 )
 
                 try:
-                    answer, analyzed = (
-                        analyze_uploaded_files(
-                            valid_files,
-                            user_input,
-                        )
+                    (
+                        answer,
+                        analyzed,
+                        provider,
+                        model,
+                    ) = analyze_uploaded_files(
+                        valid_files,
+                        user_input,
                     )
-
-                    provider = "Gemini File Analysis"
-                    model = GEMINI_MODEL
 
                     st.markdown(answer)
 
@@ -2062,7 +2241,7 @@ if user_input:
                         {
                             "role": "assistant",
                             "content": answer,
-                            "provider": "Gemini File Analysis",
+                            "provider": "File Analysis Router",
                         }
                     )
 
@@ -2070,7 +2249,7 @@ if user_input:
                         st.session_state.conversation_id,
                         "assistant",
                         answer,
-                        "Gemini File Analysis",
+                        "File Analysis Router",
                     )
 
                     finish_agent_run(
