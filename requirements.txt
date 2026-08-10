@@ -3,3 +3,4 @@ openai
 tavily-python
 requests
 psycopg[binary]
+google-genai
