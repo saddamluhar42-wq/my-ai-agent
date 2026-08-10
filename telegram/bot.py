@@ -1,6 +1,5 @@
 import json
 import threading
-import time
 import urllib.error
 import urllib.request
 
@@ -164,6 +163,191 @@ def send_message(
         )
 
 
+def send_photo(
+    chat_id,
+    photo_bytes,
+    caption=None,
+    filename="generated.png",
+):
+    """
+    Send an image to a Telegram chat.
+
+    photo_bytes must contain the actual
+    image bytes, normally PNG or JPEG.
+    """
+
+    if not photo_bytes:
+        raise TelegramError(
+            "Photo data is empty."
+        )
+
+    if not chat_id:
+        raise TelegramError(
+            "Telegram chat_id is required."
+        )
+
+    if not is_configured():
+        raise TelegramError(
+            "TELEGRAM_BOT_TOKEN is not configured."
+        )
+
+    if not TELEGRAM_URL:
+        raise TelegramError(
+            "Telegram API URL is not configured."
+        )
+
+    boundary = (
+        "----MyAIAgentTelegramBoundary"
+    ).encode("utf-8")
+
+    body = bytearray()
+
+    def add_field(
+        name,
+        value,
+    ):
+        body.extend(
+            b"--"
+            + boundary
+            + b"\r\n"
+        )
+
+        body.extend(
+            (
+                f'Content-Disposition: '
+                f'form-data; name="{name}"'
+                "\r\n\r\n"
+            ).encode("utf-8")
+        )
+
+        body.extend(
+            str(value).encode("utf-8")
+        )
+
+        body.extend(b"\r\n")
+
+    def add_file(
+        field_name,
+        file_name,
+        content,
+        content_type,
+    ):
+        body.extend(
+            b"--"
+            + boundary
+            + b"\r\n"
+        )
+
+        body.extend(
+            (
+                f'Content-Disposition: '
+                f'form-data; '
+                f'name="{field_name}"; '
+                f'filename="{file_name}"'
+                "\r\n"
+            ).encode("utf-8")
+        )
+
+        body.extend(
+            (
+                f"Content-Type: "
+                f"{content_type}"
+                "\r\n\r\n"
+            ).encode("utf-8")
+        )
+
+        body.extend(content)
+        body.extend(b"\r\n")
+
+    add_field(
+        "chat_id",
+        chat_id,
+    )
+
+    if caption:
+        add_field(
+            "caption",
+            caption,
+        )
+
+    add_file(
+        "photo",
+        filename,
+        photo_bytes,
+        "image/png",
+    )
+
+    body.extend(
+        b"--"
+        + boundary
+        + b"--\r\n"
+    )
+
+    request = urllib.request.Request(
+        f"{TELEGRAM_URL}/sendPhoto",
+        data=bytes(body),
+        headers={
+            "Content-Type": (
+                "multipart/form-data; "
+                f"boundary={boundary.decode()}"
+            ),
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=REQUEST_TIMEOUT,
+        ) as response:
+            raw = response.read().decode(
+                "utf-8"
+            )
+
+    except urllib.error.HTTPError as error:
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore",
+        )
+
+        raise TelegramError(
+            f"Telegram photo HTTP "
+            f"{error.code}: "
+            f"{error_body[:700]}"
+        ) from error
+
+    except urllib.error.URLError as error:
+        raise TelegramError(
+            "Telegram photo network "
+            f"error: {error}"
+        ) from error
+
+    except Exception as error:
+        raise TelegramError(
+            "Telegram photo request "
+            f"failed: {error}"
+        ) from error
+
+    try:
+        result = json.loads(raw)
+
+    except json.JSONDecodeError as error:
+        raise TelegramError(
+            "Telegram returned invalid "
+            "JSON for sendPhoto."
+        ) from error
+
+    if not result.get("ok"):
+        raise TelegramError(
+            result.get(
+                "description",
+                "Telegram sendPhoto failed.",
+            )
+        )
+
+    return result
+
+
 def delete_webhook():
     return api_call(
         "deleteWebhook",
@@ -174,6 +358,7 @@ def delete_webhook():
 
 
 class TelegramBot:
+
     def __init__(
         self,
         message_handler=None,
@@ -183,6 +368,7 @@ class TelegramBot:
         )
 
         self._thread = None
+
         self._stop_event = (
             threading.Event()
         )
@@ -292,8 +478,6 @@ class TelegramBot:
                 "is not configured."
             )
 
-        # Polling requires webhook mode
-        # to be disabled.
         delete_webhook()
 
         if not background:
