@@ -210,21 +210,6 @@ def initialize_database():
         """,
 
         """
-        CREATE TABLE IF NOT EXISTS memories (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL
-                REFERENCES users(id)
-                ON DELETE CASCADE,
-            memory TEXT NOT NULL,
-            category TEXT,
-            source TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE(user_id, memory)
-        );
-        """,
-
-        """
         CREATE INDEX IF NOT EXISTS idx_conversations_user_id
         ON conversations(user_id);
         """,
@@ -242,11 +227,6 @@ def initialize_database():
         """
         CREATE INDEX IF NOT EXISTS idx_user_settings_user_id
         ON user_settings(user_id);
-        """,
-
-        """
-        CREATE INDEX IF NOT EXISTS idx_memories_user_id
-        ON memories(user_id);
         """,
     ]
 
@@ -306,7 +286,7 @@ def get_or_create_user():
     if not database_available():
         return None
 
-    external_id = f"streamlit-{st.session_state.session_id}"
+    external_id = "default-user"
 
     row = database_query(
         """
@@ -333,7 +313,7 @@ def get_or_create_user():
         """,
         (
             external_id,
-            "Anonymous User",
+            "Default User",
         ),
         fetch="one",
     )
@@ -433,10 +413,10 @@ def load_conversation_messages(
 
 
 # ============================================================
-# USER / CONVERSATION INITIALIZATION
+# PERSISTENT MEMORY LOAD
 # ============================================================
 
-def initialize_user_session():
+def load_persistent_memory():
 
     if st.session_state.memory_loaded:
         return
@@ -474,12 +454,10 @@ def initialize_user_session():
 
     except Exception as error:
 
-        st.session_state.database_error = str(
-            error
-        )
+        st.session_state.database_error = str(error)
 
 
-initialize_user_session()
+load_persistent_memory()
 
 
 # ============================================================
@@ -797,298 +775,114 @@ def get_current_conversation_history(
 # MEMORY SEARCH
 # ============================================================
 
-def normalize_memory_text(text):
-    return " ".join(str(text).strip().split())
-
-
-def classify_memory(memory_text):
-    text = memory_text.lower()
-
-    if (
-        "project" in text
-        or "app" in text
-        or "software" in text
-    ):
-        return "project"
-
-    if (
-        "favorite" in text
-        or "prefer" in text
-        or "like" in text
-        or "love" in text
-    ):
-        return "preference"
-
-    if (
-        "my name is" in text
-        or text.startswith("i am ")
-        or text.startswith("i'm ")
-    ):
-        return "identity"
-
-    return "general"
-
-
-def detect_memory_save_intent(user_input):
-    text = user_input.lower().strip()
-
-    phrases = [
-        "remember that",
-        "remember this",
-        "please remember",
-        "save this",
-        "save that",
-        "store this",
-        "store that",
-        "keep this in memory",
-        "keep that in memory",
-        "remember my",
-        "my name is",
-        "i like ",
-        "i love ",
-        "i prefer ",
-        "my favorite ",
-    ]
-
-    return any(
-        phrase in text
-        for phrase in phrases
-    )
-
-
-def extract_memory_text(user_input):
-    text = normalize_memory_text(user_input)
-    lowered = text.lower()
-
-    prefixes = [
-        "please remember that ",
-        "remember that ",
-        "remember this: ",
-        "remember this ",
-        "save this: ",
-        "save this ",
-        "save that ",
-        "store this: ",
-        "store this ",
-        "store that ",
-        "keep this in memory: ",
-        "keep this in memory ",
-        "keep that in memory ",
-    ]
-
-    for prefix in prefixes:
-        if lowered.startswith(prefix):
-            return text[len(prefix):].strip()
-
-    return text
-
-
-def save_memory(
-    memory_text,
-    category=None,
-    source="user_explicit",
-):
-    if not st.session_state.user_id:
-        return None
-
-    memory_text = normalize_memory_text(
-        memory_text
-    )
-
-    if not memory_text:
-        return None
-
-    category = category or classify_memory(
-        memory_text
-    )
-
-    row = database_query(
-        """
-        INSERT INTO memories (
-            user_id,
-            memory,
-            category,
-            source
-        )
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (user_id, memory)
-        DO UPDATE SET
-            category = EXCLUDED.category,
-            source = EXCLUDED.source,
-            updated_at = NOW()
-        RETURNING id;
-        """,
-        (
-            st.session_state.user_id,
-            memory_text,
-            category,
-            source,
-        ),
-        fetch="one",
-    )
-
-    return row[0] if row else None
-
-
-def get_all_memories(limit=100):
-    if not st.session_state.user_id:
-        return []
-
-    safe_limit = max(
-        1,
-        min(int(limit), 200),
-    )
-
-    rows = database_query(
-        f"""
-        SELECT
-            id,
-            memory,
-            category,
-            source,
-            created_at,
-            updated_at
-        FROM memories
-        WHERE user_id = %s
-        ORDER BY updated_at DESC, id DESC
-        LIMIT {safe_limit};
-        """,
-        (
-            st.session_state.user_id,
-        ),
-        fetch="all",
-    )
-
-    return [
-        {
-            "id": row[0],
-            "memory": row[1],
-            "category": row[2],
-            "source": row[3],
-            "created_at": (
-                row[4].isoformat()
-                if row[4]
-                else None
-            ),
-            "updated_at": (
-                row[5].isoformat()
-                if row[5]
-                else None
-            ),
-        }
-        for row in rows
-    ]
-
-
 def search_memory(
     user_input,
     limit=20,
 ):
-    if not st.session_state.user_id:
+
+    if not st.session_state.conversation_id:
+
         return []
 
-    query_text = normalize_memory_text(
-        user_input
-    )
+    query_text = user_input.strip()
 
     if not query_text:
         return []
-
-    # Explicit recall returns the user's saved personal memory.
-    if detect_memory_intent(query_text):
-        return get_all_memories(
-            limit=100
-        )
-
-    tokens = [
-        token
-        for token in query_text.lower().split()
-        if len(token) >= 3
-    ][:8]
-
-    if not tokens:
-        return get_all_memories(
-            limit=limit
-        )
-
-    conditions = " OR ".join(
-        ["memory ILIKE %s"]
-        * len(tokens)
-    )
-
-    params = [
-        st.session_state.user_id
-    ]
-
-    params.extend(
-        [
-            f"%{token}%"
-            for token in tokens
-        ]
-    )
 
     safe_limit = max(
         1,
         min(int(limit), 50),
     )
 
+    # --------------------------------------------------------
+    # First: exact/keyword-style search using PostgreSQL
+    # --------------------------------------------------------
+
     rows = database_query(
         f"""
         SELECT
             id,
-            memory,
-            category,
-            source,
-            created_at,
-            updated_at
-        FROM memories
-        WHERE user_id = %s
-          AND ({conditions})
-        ORDER BY updated_at DESC, id DESC
+            role,
+            content,
+            provider,
+            created_at
+        FROM messages
+        WHERE conversation_id = %s
+          AND content ILIKE %s
+        ORDER BY created_at DESC, id DESC
         LIMIT {safe_limit};
         """,
-        tuple(params),
+        (
+            st.session_state.conversation_id,
+            f"%{query_text}%",
+        ),
         fetch="all",
     )
 
-    return [
-        {
-            "id": row[0],
-            "memory": row[1],
-            "category": row[2],
-            "source": row[3],
-            "created_at": (
-                row[4].isoformat()
-                if row[4]
-                else None
-            ),
-            "updated_at": (
-                row[5].isoformat()
-                if row[5]
-                else None
-            ),
-        }
-        for row in rows
-    ]
+    if rows:
 
+        results = []
 
-def delete_memory(memory_id):
-    if not st.session_state.user_id:
-        return False
+        for row in reversed(rows):
 
-    database_query(
-        """
-        DELETE FROM memories
-        WHERE id = %s
-          AND user_id = %s;
+            results.append(
+                {
+                    "id": row[0],
+                    "role": row[1],
+                    "content": row[2],
+                    "provider": row[3],
+                    "created_at": (
+                        row[4].isoformat()
+                        if row[4]
+                        else None
+                    ),
+                }
+            )
+
+        return results
+
+    # --------------------------------------------------------
+    # Fallback: return recent memory for AI to interpret
+    # --------------------------------------------------------
+
+    recent_rows = database_query(
+        f"""
+        SELECT
+            id,
+            role,
+            content,
+            provider,
+            created_at
+        FROM messages
+        WHERE conversation_id = %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT {safe_limit};
         """,
         (
-            memory_id,
-            st.session_state.user_id,
+            st.session_state.conversation_id,
         ),
+        fetch="all",
     )
 
-    return True
+    results = []
+
+    for row in reversed(recent_rows):
+
+        results.append(
+            {
+                "id": row[0],
+                "role": row[1],
+                "content": row[2],
+                "provider": row[3],
+                "created_at": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+            }
+        )
+
+    return results
 
 
 # ============================================================
@@ -1107,7 +901,7 @@ def detect_memory_intent(
         "what did i tell you",
         "what did i tell u",
         "do you remember",
-        "do you remember my",
+        "remember my",
         "my secret project",
         "secret project name",
         "favorite project",
@@ -1313,8 +1107,8 @@ def run_database_tool(
 
             result = {
                 "status": "success",
-                "memories": get_all_memories(
-                    limit=100
+                **get_current_conversation_history(
+                    limit=50
                 ),
             }
 
@@ -1348,18 +1142,15 @@ def run_database_tool(
 def run_memory_tool(
     user_input,
 ):
-    should_recall = detect_memory_intent(
-        user_input
-    )
 
-    should_save = detect_memory_save_intent(
+    if not detect_memory_intent(
         user_input
-    )
+    ):
 
-    if not should_recall and not should_save:
         return None
 
     if not database_available():
+
         return {
             "tool": "PostgreSQL Memory",
             "status": "not_configured",
@@ -1367,26 +1158,6 @@ def run_memory_tool(
         }
 
     try:
-
-        saved = None
-
-        if should_save and not should_recall:
-
-            memory_text = extract_memory_text(
-                user_input
-            )
-
-            if memory_text:
-
-                memory_id = save_memory(
-                    memory_text,
-                    source="user_explicit",
-                )
-
-                saved = {
-                    "id": memory_id,
-                    "memory": memory_text,
-                }
 
         results = search_memory(
             user_input,
@@ -1396,7 +1167,6 @@ def run_memory_tool(
         return {
             "tool": "PostgreSQL Memory",
             "status": "success",
-            "saved": saved,
             "memory": results,
         }
 
@@ -1857,19 +1627,94 @@ for message in (
 
 
 # ============================================================
-# CHAT INPUT
+# CHAT INPUT + FILE UPLOAD
 # ============================================================
 
-user_input = st.chat_input(
-    "Apne AI Agent ko command do..."
+chat_submission = st.chat_input(
+    "Apne AI Agent ko command do...",
+    accept_file=True,
+    file_type=[
+        "txt",
+        "md",
+        "py",
+        "json",
+        "csv",
+        "log",
+        "yaml",
+        "yml",
+        "xml",
+    ],
 )
+
+user_input = ""
+uploaded_files = []
+
+if chat_submission:
+    user_input = getattr(
+        chat_submission,
+        "text",
+        "",
+    ) or ""
+
+    uploaded_files = list(
+        getattr(
+            chat_submission,
+            "files",
+            [],
+        )
+        or []
+    )
+
+attachment_context = ""
+
+if uploaded_files:
+    attachment_blocks = []
+
+    for uploaded_file in uploaded_files:
+        try:
+            file_name = uploaded_file.name
+            file_bytes = uploaded_file.getvalue()
+
+            file_text = file_bytes.decode(
+                "utf-8",
+                errors="replace",
+            )
+
+            max_chars = 50000
+
+            if len(file_text) > max_chars:
+                file_text = (
+                    file_text[:max_chars]
+                    + "\n\n[File content truncated at 50,000 characters.]"
+                )
+
+            attachment_blocks.append(
+                f"ATTACHED FILE: {file_name}\n"
+                f"FILE CONTENT:\n{file_text}"
+            )
+
+        except Exception as error:
+            attachment_blocks.append(
+                "ATTACHED FILE ERROR: "
+                + str(error)
+            )
+
+    attachment_context = "\n\n".join(
+        attachment_blocks
+    )
+
+if uploaded_files and not user_input.strip():
+    user_input = (
+        "Analyze the attached file(s) and explain "
+        "their contents clearly."
+    )
 
 
 # ============================================================
 # PROCESS USER MESSAGE
 # ============================================================
 
-if user_input:
+if user_input or uploaded_files:
 
     # --------------------------------------------------------
     # SAVE USER TO SESSION
@@ -1887,6 +1732,15 @@ if user_input:
         st.markdown(
             user_input
         )
+
+        if uploaded_files:
+            st.caption(
+                "Attached: "
+                + ", ".join(
+                    file.name
+                    for file in uploaded_files
+                )
+            )
 
     # --------------------------------------------------------
     # SAVE USER TO DATABASE
@@ -2061,15 +1915,19 @@ You have access to:
 
 IMPORTANT MEMORY RULES:
 
-- PostgreSQL Memory is the user's persistent personal memory store.
-- If PostgreSQL Memory Tool Result contains relevant memories,
-  answer using those actual memories.
-- If the user asks what you remember, summarize the saved memories.
-- Do not pretend conversation messages are personal memories.
-- If the user asks you to remember/save/store something, use the
-  memory tool result and only claim it was saved when confirmed.
+- If PostgreSQL Memory Tool Result contains
+  information relevant to the user's question,
+  answer using that actual memory.
+- Do not say you cannot access memory if memory
+  data is supplied below.
 - Do not invent memories.
-- If no saved memories exist, clearly say that no saved memories exist.
+- If the exact answer is present in memory,
+  give the answer directly.
+- For questions like:
+  "What is my secret project name?"
+  "What is my favorite project?"
+  "What do you remember about me?"
+  use PostgreSQL memory when supplied.
 - Do not use Tavily for personal memory.
 - Personal memory has priority over web search.
 
@@ -2104,6 +1962,10 @@ POSTGRESQL MEMORY CONTEXT:
 WEB SEARCH CONTEXT:
 
 {web_context}
+
+ATTACHED FILE CONTEXT:
+
+{attachment_context}
 
 LATEST USER REQUEST:
 
