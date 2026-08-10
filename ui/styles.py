@@ -3,520 +3,493 @@ import streamlit as st
 
 def get_app_css():
     return """
-    <style>
+<style>
 
-    /* ========================================================
-       GLOBAL
-    ======================================================== */
+/* ============================================================
+   GLOBAL
+============================================================ */
 
-    #MainMenu {
-        visibility: hidden;
-    }
+#MainMenu {
+    visibility: hidden;
+}
 
-    footer {
-        visibility: hidden;
-    }
+footer {
+    visibility: hidden;
+}
 
-    header {
-        visibility: hidden;
-    }
+/*
+IMPORTANT:
+Do NOT hide Streamlit header.
+The sidebar expand/collapse control lives here.
+*/
+[data-testid="stHeader"] {
+    background: transparent !important;
+}
 
-    html,
-    body,
-    [data-testid="stAppViewContainer"] {
-        background: #212121 !important;
-    }
+/* Main application background */
 
-    [data-testid="stAppViewContainer"] {
-        min-height: 100vh;
-    }
+[data-testid="stAppViewContainer"] {
+    background: #212121;
+}
 
-    [data-testid="stHeader"] {
-        background: transparent !important;
-    }
-
-    [data-testid="stToolbar"] {
-        visibility: hidden;
-    }
+[data-testid="stMain"] {
+    background: #212121;
+}
 
 
-    /* ========================================================
-       MAIN BLOCK
-    ======================================================== */
+/* ============================================================
+   SIDEBAR
+============================================================ */
 
-    .main .block-container {
-        max-width: 100%;
-        padding-top: 0.75rem;
-        padding-bottom: 7rem;
-        padding-left: 0;
-        padding-right: 0;
-    }
+[data-testid="stSidebar"] {
+    background: #171717 !important;
+    border-right: 1px solid #303030;
+}
 
-    [data-testid="stMainBlockContainer"] {
-        padding-top: 0.75rem;
-        padding-bottom: 7rem;
-    }
+[data-testid="stSidebarContent"] {
+    padding: 14px 12px 20px 12px;
+}
 
+/* Sidebar scrollbar */
 
-    /* ========================================================
-       SIDEBAR
-    ======================================================== */
+[data-testid="stSidebar"] ::-webkit-scrollbar {
+    width: 7px;
+}
 
-    [data-testid="stSidebar"] {
-        background: #171717 !important;
-        border-right: 1px solid #2b2b2b !important;
-    }
+[data-testid="stSidebar"] ::-webkit-scrollbar-track {
+    background: #171717;
+}
 
-    [data-testid="stSidebarContent"] {
-        padding: 14px 12px 18px 12px !important;
-    }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
+    background: #3f3f3f;
+    border-radius: 10px;
+}
 
-    [data-testid="stSidebarUserContent"] {
-        padding-bottom: 20px;
-    }
-
-    .sidebar-brand {
-        color: #ffffff;
-        font-size: 17px;
-        font-weight: 600;
-        padding: 5px 4px 12px 4px;
-    }
-
-    .sidebar-section {
-        color: #9b9b9b;
-        font-size: 11px;
-        font-weight: 600;
-        margin-top: 16px;
-        margin-bottom: 7px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb:hover {
+    background: #555555;
+}
 
 
-    /* ========================================================
-       CHAT HEADER
-    ======================================================== */
+/* ============================================================
+   SIDEBAR BRAND
+============================================================ */
 
-    .chat-header {
-        width: 100%;
-        height: 52px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #ececec;
-        font-size: 14px;
-        font-weight: 600;
-        border-bottom: 1px solid #2b2b2b;
-        background: rgba(33, 33, 33, 0.92);
-    }
+.sidebar-brand {
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 8px 6px 4px 6px;
+}
+
+.sidebar-version {
+    color: #777777;
+    font-size: 12px;
+    padding: 0 6px 12px 6px;
+}
+
+.sidebar-section {
+    color: #a0a0a0;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+}
 
 
-    /* ========================================================
-       EMPTY STATE
-    ======================================================== */
+/* ============================================================
+   MAIN CONTENT
+============================================================ */
+
+.main-title {
+    text-align: center;
+    font-size: 30px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-top: 20px;
+    margin-bottom: 8px;
+}
+
+.main-subtitle {
+    text-align: center;
+    color: #9b9b9b;
+    font-size: 14px;
+    margin-bottom: 30px;
+}
+
+
+/* ============================================================
+   CHAT AREA
+============================================================ */
+
+[data-testid="stChatMessage"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 18px 10px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+[data-testid="stChatMessageContent"] {
+    color: #ececec;
+    font-size: 15px;
+    line-height: 1.65;
+}
+
+
+/* ============================================================
+   CHAT INPUT
+============================================================ */
+
+[data-testid="stChatInput"] {
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-bottom: 10px;
+}
+
+[data-testid="stChatInput"] > div {
+    background: #2f2f2f !important;
+    border: 1px solid #454545 !important;
+    border-radius: 24px !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.30);
+}
+
+[data-testid="stChatInput"] textarea {
+    color: #ffffff !important;
+    background: transparent !important;
+    font-size: 15px;
+}
+
+[data-testid="stChatInput"] textarea::placeholder {
+    color: #999999 !important;
+}
+
+
+/* ============================================================
+   CHAT INPUT BUTTON
+============================================================ */
+
+[data-testid="stChatInput"] button {
+    border-radius: 50%;
+}
+
+
+/* ============================================================
+   FILE UPLOAD
+============================================================ */
+
+[data-testid="stFileUploader"] {
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+    background: #2f2f2f !important;
+    border: 1px solid #454545 !important;
+    border-radius: 16px !important;
+}
+
+
+/* ============================================================
+   BUTTONS
+============================================================ */
+
+.stButton > button {
+    width: 100%;
+    min-height: 40px;
+    border-radius: 10px;
+    border: 1px solid #3d3d3d;
+    background: #212121;
+    color: #eeeeee;
+    font-size: 14px;
+    transition: all 0.15s ease;
+}
+
+.stButton > button:hover {
+    background: #303030;
+    border-color: #555555;
+    color: #ffffff;
+}
+
+.stButton > button:focus {
+    border-color: #666666;
+    box-shadow: none;
+}
+
+
+/* ============================================================
+   SIDEBAR BUTTONS
+============================================================ */
+
+[data-testid="stSidebar"] .stButton > button {
+    background: #212121;
+    border: 1px solid #3d3d3d;
+    color: #eeeeee;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #303030;
+    border-color: #555555;
+}
+
+
+/* ============================================================
+   SELECTBOX
+============================================================ */
+
+[data-testid="stSelectbox"] {
+    margin-bottom: 4px;
+}
+
+[data-testid="stSelectbox"] > div > div {
+    background: #212121 !important;
+    border: 1px solid #3d3d3d !important;
+    border-radius: 10px !important;
+}
+
+[data-testid="stSelectbox"] label {
+    color: #aaaaaa !important;
+}
+
+
+/* ============================================================
+   STATUS / ALERTS
+============================================================ */
+
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+
+/* ============================================================
+   SERVICE STATUS
+============================================================ */
+
+.service-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 2px;
+    font-size: 13px;
+}
+
+.service-name {
+    color: #dddddd;
+}
+
+.service-status {
+    color: #888888;
+    font-size: 11px;
+}
+
+.service-status.connected {
+    color: #9a9a9a;
+}
+
+.service-status.offline {
+    color: #777777;
+}
+
+
+/* ============================================================
+   EMPTY STATE
+============================================================ */
+
+.empty-state {
+    max-width: 760px;
+    margin: 80px auto 0 auto;
+    text-align: center;
+}
+
+.empty-state-icon {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 25px auto;
+    border-radius: 50%;
+    background: #303030;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.empty-state-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.empty-state-title {
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.empty-state-subtitle {
+    color: #999999;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+
+/* ============================================================
+   QUICK ACTIONS
+============================================================ */
+
+.quick-actions {
+    max-width: 900px;
+    margin: 30px auto 0 auto;
+}
+
+.quick-action-button {
+    background: #212121;
+    border: 1px solid #3d3d3d;
+    border-radius: 12px;
+    color: #eeeeee;
+    padding: 12px;
+    text-align: center;
+    font-size: 13px;
+}
+
+
+/* ============================================================
+   FILE CHIPS
+============================================================ */
+
+.file-chip {
+    display: inline-block;
+    background: #303030;
+    color: #dddddd;
+    border: 1px solid #444444;
+    border-radius: 10px;
+    padding: 6px 10px;
+    margin: 3px;
+    font-size: 12px;
+}
+
+
+/* ============================================================
+   IMAGE RESULT
+============================================================ */
+
+.generated-image-container {
+    max-width: 900px;
+    margin: 15px auto;
+    text-align: center;
+}
+
+.generated-image-container img {
+    max-width: 100%;
+    border-radius: 14px;
+}
+
+
+/* ============================================================
+   DOWNLOAD BUTTON
+============================================================ */
+
+[data-testid="stDownloadButton"] button {
+    border-radius: 10px;
+    border: 1px solid #444444;
+    background: #2b2b2b;
+    color: #ffffff;
+}
+
+[data-testid="stDownloadButton"] button:hover {
+    background: #383838;
+}
+
+
+/* ============================================================
+   DIVIDERS
+============================================================ */
+
+hr {
+    border-color: #303030 !important;
+}
+
+
+/* ============================================================
+   CAPTION
+============================================================ */
+
+.stCaption {
+    color: #777777 !important;
+}
+
+
+/* ============================================================
+   CODE BLOCKS
+============================================================ */
+
+[data-testid="stCodeBlock"] {
+    border-radius: 12px;
+}
+
+
+/* ============================================================
+   MARKDOWN LINKS
+============================================================ */
+
+a {
+    color: #d0d0d0 !important;
+}
+
+
+/* ============================================================
+   SCROLLBAR — MAIN
+============================================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #171717;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444444;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555555;
+}
+
+
+/* ============================================================
+   RESPONSIVE
+============================================================ */
+
+@media (max-width: 900px) {
 
     .empty-state {
-        width: min(720px, 92%);
-        margin: 17vh auto 0 auto;
-        text-align: center;
-    }
-
-    .empty-state-icon {
-        width: 54px;
-        height: 54px;
-        margin: 0 auto 20px auto;
-        border-radius: 50%;
-        background: #2f2f2f;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #ffffff;
-        font-size: 23px;
+        margin-top: 50px;
+        padding: 0 20px;
     }
 
     .empty-state-title {
-        color: #f5f5f5;
-        font-size: 28px;
-        font-weight: 600;
-        margin-bottom: 8px;
+        font-size: 24px;
     }
-
-    .empty-state-subtitle {
-        color: #9b9b9b;
-        font-size: 14px;
-        line-height: 1.6;
-    }
-
-
-    /* ========================================================
-       CHAT MESSAGES
-    ======================================================== */
-
-    [data-testid="stChatMessage"] {
-        width: 100%;
-        max-width: 820px;
-        margin-left: auto;
-        margin-right: auto;
-        padding: 18px 22px;
-        background: transparent !important;
-        border: none !important;
-    }
-
-    [data-testid="stChatMessageContent"] {
-        color: #ececec !important;
-        font-size: 15px;
-        line-height: 1.7;
-        max-width: 100%;
-    }
-
-    [data-testid="stChatMessageContent"] p {
-        margin-bottom: 0.8rem;
-    }
-
-    [data-testid="stChatMessageContent"] p:last-child {
-        margin-bottom: 0;
-    }
-
-
-    /* ========================================================
-       MESSAGE AVATAR
-    ======================================================== */
-
-    [data-testid="stChatMessageAvatarIcon"] {
-        border-radius: 50%;
-    }
-
-
-    /* ========================================================
-       MARKDOWN
-    ======================================================== */
-
-    [data-testid="stChatMessageContent"] code {
-        background: #2a2a2a;
-        border: 1px solid #3a3a3a;
-        border-radius: 5px;
-        padding: 2px 5px;
-        color: #eeeeee;
-    }
-
-    [data-testid="stChatMessageContent"] pre {
-        background: #171717 !important;
-        border: 1px solid #333333;
-        border-radius: 12px;
-        padding: 14px;
-        overflow-x: auto;
-    }
-
-    [data-testid="stChatMessageContent"] pre code {
-        background: transparent;
-        border: none;
-        padding: 0;
-    }
-
-    [data-testid="stChatMessageContent"] blockquote {
-        border-left: 3px solid #666666;
-        padding-left: 14px;
-        color: #b5b5b5;
-    }
-
-
-    /* ========================================================
-       CHAT INPUT
-    ======================================================== */
 
     [data-testid="stChatInput"] {
-        width: min(820px, calc(100% - 32px)) !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        bottom: 18px;
+        padding-left: 10px;
+        padding-right: 10px;
     }
 
-    [data-testid="stChatInput"] > div {
-        background: #2f2f2f !important;
-        border: 1px solid #454545 !important;
-        border-radius: 22px !important;
-        box-shadow:
-            0 4px 20px rgba(0, 0, 0, 0.28);
-        min-height: 56px;
+    [data-testid="stChatMessage"] {
+        padding-left: 8px;
+        padding-right: 8px;
     }
+}
 
-    [data-testid="stChatInput"] > div:focus-within {
-        border-color: #666666 !important;
-        box-shadow:
-            0 4px 22px rgba(0, 0, 0, 0.34);
-    }
-
-    [data-testid="stChatInput"] textarea {
-        color: #ffffff !important;
-        background: transparent !important;
-        font-size: 15px !important;
-        line-height: 1.5 !important;
-    }
-
-    [data-testid="stChatInput"] textarea::placeholder {
-        color: #999999 !important;
-    }
-
-
-    /* ========================================================
-       CHAT INPUT BUTTONS
-    ======================================================== */
-
-    [data-testid="stChatInput"] button {
-        border-radius: 12px !important;
-    }
-
-
-    /* ========================================================
-       NORMAL BUTTONS
-    ======================================================== */
-
-    .stButton > button {
-        width: 100%;
-        min-height: 38px;
-        border-radius: 9px !important;
-        border: 1px solid #3a3a3a !important;
-        background: transparent !important;
-        color: #eeeeee !important;
-        font-size: 13px;
-        transition:
-            background 0.15s ease,
-            border-color 0.15s ease;
-    }
-
-    .stButton > button:hover {
-        background: #2a2a2a !important;
-        border-color: #4d4d4d !important;
-    }
-
-    .stButton > button:focus {
-        box-shadow: none !important;
-    }
-
-
-    /* ========================================================
-       PRIMARY BUTTON
-    ======================================================== */
-
-    .stButton > button[kind="primary"] {
-        background: #2f2f2f !important;
-        border-color: #4a4a4a !important;
-        color: #ffffff !important;
-    }
-
-    .stButton > button[kind="primary"]:hover {
-        background: #3a3a3a !important;
-    }
-
-
-    /* ========================================================
-       SELECTBOX
-    ======================================================== */
-
-    [data-testid="stSelectbox"] {
-        margin-bottom: 4px;
-    }
-
-    [data-testid="stSelectbox"] > div > div {
-        background: #212121 !important;
-        border: 1px solid #3a3a3a !important;
-        border-radius: 9px !important;
-    }
-
-    [data-testid="stSelectbox"] input {
-        color: #ffffff !important;
-    }
-
-
-    /* ========================================================
-       TEXT INPUT
-    ======================================================== */
-
-    [data-testid="stTextInput"] input {
-        background: #212121 !important;
-        border: 1px solid #333333 !important;
-        border-radius: 9px !important;
-        color: #ffffff !important;
-    }
-
-    [data-testid="stTextInput"] input:focus {
-        border-color: #555555 !important;
-        box-shadow: none !important;
-    }
-
-
-    /* ========================================================
-       EXPANDER
-    ======================================================== */
-
-    [data-testid="stExpander"] {
-        background: transparent !important;
-        border: 1px solid #333333 !important;
-        border-radius: 10px !important;
-    }
-
-    [data-testid="stExpander"] summary {
-        color: #eeeeee !important;
-    }
-
-
-    /* ========================================================
-       STATUS / ALERTS
-    ======================================================== */
-
-    [data-testid="stAlert"] {
-        border-radius: 10px !important;
-        border: 1px solid #3a3a3a !important;
-    }
-
-
-    /* ========================================================
-       IMAGE
-    ======================================================== */
-
-    [data-testid="stImage"] {
-        max-width: 820px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    [data-testid="stImage"] img {
-        border-radius: 14px;
-        border: 1px solid #353535;
-        box-shadow:
-            0 8px 30px rgba(0, 0, 0, 0.25);
-    }
-
-
-    /* ========================================================
-       DOWNLOAD BUTTON
-    ======================================================== */
-
-    [data-testid="stDownloadButton"] {
-        max-width: 820px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    [data-testid="stDownloadButton"] button {
-        border-radius: 9px !important;
-        background: #2f2f2f !important;
-        border: 1px solid #414141 !important;
-        color: #eeeeee !important;
-    }
-
-    [data-testid="stDownloadButton"] button:hover {
-        background: #393939 !important;
-    }
-
-
-    /* ========================================================
-       FILE UPLOADER
-    ======================================================== */
-
-    [data-testid="stFileUploader"] {
-        max-width: 820px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    [data-testid="stFileUploaderDropzone"] {
-        background: #2a2a2a !important;
-        border: 1px solid #3f3f3f !important;
-        border-radius: 12px !important;
-    }
-
-
-    /* ========================================================
-       FILE CHIPS
-    ======================================================== */
-
-    .file-chip {
-        display: inline-flex;
-        align-items: center;
-        background: #2f2f2f;
-        color: #dddddd;
-        border: 1px solid #414141;
-        border-radius: 9px;
-        padding: 6px 10px;
-        margin: 3px;
-        font-size: 12px;
-    }
-
-
-    /* ========================================================
-       DIVIDER
-    ======================================================== */
-
-    hr {
-        border-color: #303030 !important;
-    }
-
-
-    /* ========================================================
-       CAPTION
-    ======================================================== */
-
-    [data-testid="stCaptionContainer"] {
-        color: #858585;
-    }
-
-
-    /* ========================================================
-       SCROLLBAR
-    ======================================================== */
-
-    ::-webkit-scrollbar {
-        width: 7px;
-        height: 7px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: #171717;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: #444444;
-        border-radius: 10px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #555555;
-    }
-
-
-    /* ========================================================
-       MOBILE
-    ======================================================== */
-
-    @media (max-width: 768px) {
-
-        [data-testid="stChatMessage"] {
-            padding-left: 12px;
-            padding-right: 12px;
-        }
-
-        [data-testid="stChatInput"] {
-            width: calc(100% - 18px) !important;
-        }
-
-        .empty-state {
-            margin-top: 12vh;
-        }
-
-        .empty-state-title {
-            font-size: 24px;
-        }
-    }
-
-
-    /* ========================================================
-       REDUCE DEFAULT STREAMLIT SPACING
-    ======================================================== */
-
-    [data-testid="stVerticalBlock"] {
-        gap: 0.5rem;
-    }
-
-    </style>
-    """
+</style>
+"""
