@@ -4,7 +4,6 @@ import urllib.request
 import urllib.error
 
 import streamlit as st
-from google import genai
 import psycopg
 
 
@@ -31,6 +30,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENROUTER_MODEL = "openrouter/free"
 
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
+)
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 TAVILY_URL = "https://api.tavily.com/search"
 
@@ -41,19 +45,6 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 st.title("🤖 My AI Agent")
 st.caption("Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL")
-
-
-# ============================================================
-# API CLIENT
-# ============================================================
-
-gemini_client = None
-
-if GEMINI_API_KEY:
-    try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception:
-        gemini_client = None
 
 
 # ============================================================
@@ -77,12 +68,13 @@ for message in st.session_state.messages:
 
         if message["role"] == "assistant":
             provider = message.get("provider")
+
             if provider:
                 st.caption(f"Powered by {provider}")
 
 
 # ============================================================
-# POSTGRESQL DATABASE TOOLS
+# POSTGRESQL DATABASE
 # ============================================================
 
 def database_available():
@@ -91,15 +83,20 @@ def database_available():
 
 def database_query(query, params=None, fetch="all"):
     """
-    Controlled database helper.
+    Controlled PostgreSQL helper.
 
-    This application does NOT allow the AI to submit arbitrary SQL.
-    Only internally defined safe queries should call this function.
+    AI ko arbitrary SQL execute karne ki permission nahi hai.
+    Sirf application ke internally defined safe queries use hoti hain.
     """
+
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not configured.")
 
-    with psycopg.connect(DATABASE_URL, connect_timeout=10) as connection:
+    with psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10
+    ) as connection:
+
         with connection.cursor() as cursor:
             cursor.execute(query, params or ())
 
@@ -113,10 +110,15 @@ def database_query(query, params=None, fetch="all"):
 
 
 def test_database_connection():
-    row = database_query("SELECT 1;", fetch="one")
+    row = database_query(
+        "SELECT 1;",
+        fetch="one"
+    )
 
     if not row or row[0] != 1:
-        raise RuntimeError("PostgreSQL connection test returned an unexpected result.")
+        raise RuntimeError(
+            "PostgreSQL connection test returned an unexpected result."
+        )
 
     return {
         "status": "connected",
@@ -145,10 +147,15 @@ def get_database_info():
 def list_database_tables():
     rows = database_query(
         """
-        SELECT table_schema, table_name
+        SELECT
+            table_schema,
+            table_name
         FROM information_schema.tables
-        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-          AND table_type = 'BASE TABLE'
+        WHERE table_schema NOT IN (
+            'pg_catalog',
+            'information_schema'
+        )
+        AND table_type = 'BASE TABLE'
         ORDER BY table_schema, table_name
         """,
         fetch="all",
@@ -165,10 +172,9 @@ def list_database_tables():
 
 def detect_database_command(user_input):
     """
-    Detects common database-related requests.
-
-    The AI never receives unrestricted SQL execution access.
+    Common database requests detect karta hai.
     """
+
     text = user_input.lower().strip()
 
     database_words = [
@@ -238,22 +244,27 @@ def run_database_tool(user_input):
         }
 
     try:
+
         if command == "test_connection":
+
             result = test_database_connection()
 
         elif command == "list_tables":
+
             result = {
                 "status": "connected",
                 "tables": list_database_tables(),
             }
 
         elif command == "database_info":
+
             result = {
                 "status": "connected",
                 **get_database_info(),
             }
 
         else:
+
             result = {
                 "status": "error",
                 "message": "Unknown database tool command.",
@@ -265,6 +276,7 @@ def run_database_tool(user_input):
         }
 
     except Exception as error:
+
         return {
             "tool": "PostgreSQL",
             "status": "error",
@@ -277,8 +289,11 @@ def run_database_tool(user_input):
 # ============================================================
 
 def search_web(query):
+
     if not TAVILY_API_KEY:
-        raise RuntimeError("TAVILY_API_KEY is not configured.")
+        raise RuntimeError(
+            "TAVILY_API_KEY is not configured."
+        )
 
     payload = {
         "api_key": TAVILY_API_KEY,
@@ -300,7 +315,12 @@ def search_web(query):
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=60
+        ) as response:
+
             response_data = response.read().decode("utf-8")
 
         result = json.loads(response_data)
@@ -311,6 +331,7 @@ def search_web(query):
         sources = []
 
         for item in results:
+
             title = item.get("title", "")
             content = item.get("content", "")
             url = item.get("url", "")
@@ -326,37 +347,122 @@ def search_web(query):
         return answer, web_context
 
     except urllib.error.HTTPError as error:
-        error_body = error.read().decode("utf-8", errors="ignore")
+
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore"
+        )
 
         raise RuntimeError(
             f"Tavily HTTP {error.code}: {error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
+
         raise RuntimeError(
             f"Tavily connection error: {error.reason}"
         )
 
 
 # ============================================================
-# GEMINI
+# GEMINI REST API
 # ============================================================
 
 def ask_gemini(prompt):
-    if not gemini_client:
-        raise RuntimeError("Gemini API key is not configured.")
 
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "Gemini API key is not configured."
+        )
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 4096,
+        },
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+        },
+        method="POST",
     )
 
-    answer = response.text
+    try:
 
-    if not answer:
-        raise RuntimeError("Gemini returned an empty response.")
+        with urllib.request.urlopen(
+            request,
+            timeout=90
+        ) as response:
 
-    return answer
+            response_data = response.read().decode("utf-8")
+
+        result = json.loads(response_data)
+
+        candidates = result.get("candidates", [])
+
+        if not candidates:
+            raise RuntimeError(
+                "Gemini returned no candidates."
+            )
+
+        parts = (
+            candidates[0]
+            .get("content", {})
+            .get("parts", [])
+        )
+
+        answer_parts = []
+
+        for part in parts:
+
+            text = part.get("text")
+
+            if text:
+                answer_parts.append(text)
+
+        answer = "".join(answer_parts).strip()
+
+        if not answer:
+            raise RuntimeError(
+                "Gemini returned an empty response."
+            )
+
+        return answer
+
+    except urllib.error.HTTPError as error:
+
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore"
+        )
+
+        raise RuntimeError(
+            f"Gemini HTTP {error.code}: {error_body[:500]}"
+        )
+
+    except urllib.error.URLError as error:
+
+        raise RuntimeError(
+            f"Gemini connection error: {error.reason}"
+        )
 
 
 # ============================================================
@@ -364,8 +470,11 @@ def ask_gemini(prompt):
 # ============================================================
 
 def ask_openrouter(prompt):
+
     if not OPENROUTER_API_KEY:
-        raise RuntimeError("OpenRouter API key is not configured.")
+        raise RuntimeError(
+            "OpenRouter API key is not configured."
+        )
 
     payload = {
         "model": OPENROUTER_MODEL,
@@ -392,26 +501,53 @@ def ask_openrouter(prompt):
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=90) as response:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=90
+        ) as response:
+
             response_data = response.read().decode("utf-8")
 
         result = json.loads(response_data)
 
-        answer = result["choices"][0]["message"]["content"]
+        choices = result.get("choices", [])
+
+        if not choices:
+            raise RuntimeError(
+                "OpenRouter returned no choices."
+            )
+
+        message = choices[0].get(
+            "message",
+            {}
+        )
+
+        answer = message.get(
+            "content",
+            ""
+        )
 
         if not answer:
-            raise RuntimeError("OpenRouter returned an empty response.")
+            raise RuntimeError(
+                "OpenRouter returned an empty response."
+            )
 
         return answer
 
     except urllib.error.HTTPError as error:
-        error_body = error.read().decode("utf-8", errors="ignore")
+
+        error_body = error.read().decode(
+            "utf-8",
+            errors="ignore"
+        )
 
         raise RuntimeError(
             f"OpenRouter HTTP {error.code}: {error_body[:500]}"
         )
 
     except urllib.error.URLError as error:
+
         raise RuntimeError(
             f"OpenRouter connection error: {error.reason}"
         )
@@ -422,6 +558,7 @@ def ask_openrouter(prompt):
 # ============================================================
 
 def ask_ai(prompt):
+
     gemini_error = None
     openrouter_error = None
 
@@ -430,11 +567,15 @@ def ask_ai(prompt):
     # --------------------------------------------------------
 
     if GEMINI_API_KEY:
+
         try:
+
             answer = ask_gemini(prompt)
+
             return answer, "Gemini"
 
         except Exception as error:
+
             gemini_error = str(error)
 
     # --------------------------------------------------------
@@ -442,11 +583,15 @@ def ask_ai(prompt):
     # --------------------------------------------------------
 
     if OPENROUTER_API_KEY:
+
         try:
+
             answer = ask_openrouter(prompt)
+
             return answer, "OpenRouter"
 
         except Exception as error:
+
             openrouter_error = str(error)
 
     # --------------------------------------------------------
@@ -456,17 +601,25 @@ def ask_ai(prompt):
     errors = []
 
     if gemini_error:
-        errors.append(f"Gemini: {gemini_error}")
-
-    if openrouter_error:
-        errors.append(f"OpenRouter: {openrouter_error}")
-
-    if not errors:
-        raise RuntimeError(
-            "Neither GEMINI_API_KEY nor OPENROUTER_API_KEY is configured."
+        errors.append(
+            f"Gemini: {gemini_error}"
         )
 
-    raise RuntimeError(" | ".join(errors))
+    if openrouter_error:
+        errors.append(
+            f"OpenRouter: {openrouter_error}"
+        )
+
+    if not errors:
+
+        raise RuntimeError(
+            "Neither GEMINI_API_KEY nor "
+            "OPENROUTER_API_KEY is configured."
+        )
+
+    raise RuntimeError(
+        " | ".join(errors)
+    )
 
 
 # ============================================================
@@ -474,12 +627,14 @@ def ask_ai(prompt):
 # ============================================================
 
 def build_memory():
+
     if not st.session_state.messages:
         return "No previous conversation."
 
     memory_parts = []
 
     for message in st.session_state.messages:
+
         role = message["role"].upper()
         content = message["content"]
 
@@ -498,6 +653,10 @@ user_input = st.chat_input(
     "Apne AI Agent ko command do..."
 )
 
+
+# ============================================================
+# PROCESS USER MESSAGE
+# ============================================================
 
 if user_input:
 
@@ -526,12 +685,20 @@ if user_input:
     # --------------------------------------------------------
 
     database_context = ""
-    database_result = run_database_tool(user_input)
+
+    database_result = run_database_tool(
+        user_input
+    )
 
     if database_result is not None:
+
         database_context = (
             "POSTGRESQL DATABASE TOOL RESULT:\n"
-            + json.dumps(database_result, indent=2, default=str)
+            + json.dumps(
+                database_result,
+                indent=2,
+                default=str
+            )
         )
 
     # --------------------------------------------------------
@@ -568,9 +735,16 @@ if user_input:
     # --------------------------------------------------------
 
     if should_search and TAVILY_API_KEY:
+
         try:
-            with st.spinner("Web par search kar raha hoon..."):
-                search_answer, search_results = search_web(user_input)
+
+            with st.spinner(
+                "Web par search kar raha hoon..."
+            ):
+
+                search_answer, search_results = search_web(
+                    user_input
+                )
 
             web_context = (
                 f"WEB SEARCH ANSWER:\n"
@@ -579,7 +753,8 @@ if user_input:
                 f"{search_results}"
             )
 
-        except Exception:
+        except Exception as error:
+
             web_context = (
                 "Web search failed. "
                 "Answer using available knowledge."
@@ -642,22 +817,32 @@ Respond directly to the latest user request.
     # --------------------------------------------------------
 
     with st.chat_message("assistant"):
+
         with st.spinner("Thinking..."):
 
             try:
+
                 answer, provider = ask_ai(prompt)
 
                 st.markdown(answer)
 
-                provider_parts = [provider]
+                provider_parts = [
+                    provider
+                ]
 
                 if web_context:
-                    provider_parts.append("Tavily Web Search")
+                    provider_parts.append(
+                        "Tavily Web Search"
+                    )
 
                 if database_result is not None:
-                    provider_parts.append("PostgreSQL")
+                    provider_parts.append(
+                        "PostgreSQL"
+                    )
 
-                provider_text = " + ".join(provider_parts)
+                provider_text = " + ".join(
+                    provider_parts
+                )
 
                 st.caption(
                     f"Powered by {provider_text}"
@@ -675,11 +860,16 @@ Respond directly to the latest user request.
                     }
                 )
 
-                st.session_state.last_provider = provider_text
+                st.session_state.last_provider = (
+                    provider_text
+                )
 
             except Exception as error:
+
                 st.error(
                     "AI service temporarily unavailable."
                 )
 
-                st.caption(str(error))
+                st.caption(
+                    str(error)
+                )
