@@ -64,7 +64,7 @@ ANTHROPIC_API_KEY_3 = os.getenv(
 # ============================================================
 
 # ------------------------------------------------------------
-# Hugging Face
+# HUGGING FACE
 # ------------------------------------------------------------
 
 HF_TOKEN = os.getenv(
@@ -83,8 +83,7 @@ HF_TOKEN_3 = os.getenv(
 # ------------------------------------------------------------
 # NVIDIA
 #
-# IMPORTANT:
-# Render variable names:
+# Render Environment Variables:
 #
 # NVIDIA_IMAGE_1
 # NVIDIA_IMAGE_2
@@ -102,6 +101,19 @@ NVIDIA_IMAGE_2 = os.getenv(
 NVIDIA_IMAGE_3 = os.getenv(
     "NVIDIA_IMAGE_3"
 )
+
+
+# ============================================================
+# NVIDIA COMPATIBILITY ALIASES
+#
+# Existing ai/nvidia.py may still import these names.
+# ============================================================
+
+NVIDIA_API_KEY = NVIDIA_IMAGE_1
+
+NVIDIA_API_KEY_2 = NVIDIA_IMAGE_2
+
+NVIDIA_API_KEY_3 = NVIDIA_IMAGE_3
 
 
 # ============================================================
@@ -366,7 +378,7 @@ def is_hf_3_configured():
 
 
 # ============================================================
-# HELPERS — NVIDIA IMAGE
+# HELPERS — NVIDIA
 # ============================================================
 
 def is_nvidia_configured():
@@ -385,12 +397,7 @@ def is_nvidia_3_configured():
     return bool(NVIDIA_IMAGE_3)
 
 
-# ============================================================
-# NVIDIA KEY LIST
-# ============================================================
-
 def get_nvidia_image_keys():
-
     return [
         key
         for key in [
