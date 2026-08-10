@@ -1,66 +1,9 @@
 
 Screenshot (66).png
 
-Screenshot se structure clear hai:
-
-app.py
-
-requirements.txt
-
-README.md
-
-Aur current app.py 2060 lines ka hai. 
-
-STEP 19.2 — app.py ka exact current code lena
-GitHub mein app.py already open hai.
-
-Ab sirf ye karo:
-
-app.py ke upar Raw button click karo.
-
-Jo raw-code page khulega, poora code copy karo.
-
-Yahan paste karo.
-
-Abhi GitHub mein koi change/commit mat karna.
-
-Code milte hi main existing working features ko preserve karke STEP 19 PostgreSQL Memory Retrieval Router ka next modification dunga.
-
-
 
 Pasted markdown.md
 File
-
-File mil gaya. Current app.py mein PostgreSQL Memory Retrieval Router abhi actual cross-conversation persistent memory router nahi hai. search_memory() sirf current conversation_id ke messages search karta hai. 
-
-
-STEP 19.2 — Current Memory Router ko upgrade karna
-Target:
-
-User question → Memory Intent → PostgreSQL Memory Router → relevant memories across user's conversations → AI
-
-Is step mein:
-
-Existing users, conversations, messages tables same rahengi.
-
-Existing Gemini/OpenRouter, Tavily, Agent Runs aur normal chat break nahi karenge.
-
-New table ki zarurat nahi.
-
-Memory search sirf current conversation tak limited nahi rahega.
-
-PostgreSQL ke existing messages data se user-level persistent memory retrieve hogi.
-
-Exact/keyword search ke saath PostgreSQL text-ranking use karenge.
-
-Normal chat par unnecessary memory retrieval nahi hoga.
-
-Abhi code modify mat karo.
-
-Next step mein main app.py ka complete production-ready code dunga, snippets nahi, jise GitHub mein directly replace karke Render deploy kar sakte ho.
-
-
-ok
 
 Worked for 24s
 STEP 19.2 — Complete app.py ready
@@ -95,6 +38,79 @@ PostgreSQL relevance search — relevant old messages
 Recent memory fallback — recent messages across conversations
 
 Abhi Render par test mat karo. Pehle GitHub commit complete karo. Uske baad sirf “commit ho gaya” likho.
+
+
+
+commit ho gaya  
+
+STEP 19.3 — Render Deployment Check
+Ab Render tab open karo.
+
+Render → My AI Agent Web Service
+
+Events / Deploys section kholo.
+
+Latest deployment ka status dekho.
+
+Jab status Live / Deploy succeeded ho jaye, apni deployed app open karo.
+
+Abhi app mein koi test message mat bhejna.
+
+Sirf mujhe batao:
+
+Render Live
+
+Agar deployment failed hai, to error ka screenshot bhejo.
+
+
+Render Live  
+
+STEP 19.4 — Render Memory Retrieval Test
+Ab deployed Render app open karo.
+
+Chat input mein ye exact test bhejo:
+
+What do you remember?
+Expected result
+Agent ko PostgreSQL se saved conversation memory retrieve karke answer dena chahiye, aur response ke neeche provider mein PostgreSQL Memory dikhna chahiye.
+
+Sirf iska result/screenshot bhejo.
+Abhi koi aur test mat karo.
+
+
+File "/opt/render/project/src/app.py", line 14
+  STEP 19.2 — app.py ka exact current code lena
+            ^
+SyntaxError: invalid character '—' (U+2014)
+
+Worked for 23s
+Ye meri mistake hai. GitHub mein app.py ke andar code ke saath explanatory text paste ho gaya, isliye Render Python usko execute karne ki koshish kar raha hai.
+
+Error:
+
+STEP 19.2 — app.py ka exact current code lena
+Python code nahi hai, isliye SyntaxError aa raha hai.
+
+STEP 19.5 — GitHub app.py ko clean code se replace karo
+Maine clean app.py file ready kar di hai.
+
+
+GitHub mein:
+
+app.py open karo
+
+Edit button
+
+Poora existing content delete karo
+
+Download ki hui app.py ka poora code paste karo
+
+Commit changes
+
+Important: app.py mein sirf Python code hona chahiye. STEP 19..., ```python, explanation, headings etc. bilkul nahi.
+
+Commit ke baad sirf commit ho gaya likho.
+
 
 
 
