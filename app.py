@@ -6,6 +6,7 @@ import urllib.error
 
 import streamlit as st
 import psycopg
+from autonomous import start_background_services
 
 
 # ============================================================
@@ -43,6 +44,8 @@ OPENROUTER_URL = (
 TAVILY_URL = "https://api.tavily.com/search"
 
 APP_NAME = "My AI Agent"
+
+start_background_services()
 
 
 # ============================================================
