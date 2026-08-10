@@ -11,7 +11,6 @@ from database.memory import (
 )
 from database.models import get_or_create_conversation
 from files.processor import (
-    FileProcessingError,
     build_file_context,
     process_multiple_files,
 )
@@ -37,25 +36,8 @@ def initialize_chat_state():
 def render_chat():
     initialize_chat_state()
 
-    render_header()
     render_messages()
-    render_uploaded_files()
-    render_input_area()
-
-
-def render_header():
-    st.markdown(
-        '<div class="main-title">My AI Agent</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="main-subtitle">'
-        "Ask questions, upload files, search the web, "
-        "and continue conversations with memory."
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    render_composer()
 
 
 def render_messages():
@@ -65,9 +47,7 @@ def render_messages():
     )
 
     if not messages:
-        st.info(
-            "Start a conversation by sending a message below."
-        )
+        render_empty_state()
         return
 
     for message in messages:
@@ -81,63 +61,42 @@ def render_messages():
             "",
         )
 
-        if role == "user":
-            with st.chat_message("user"):
-                st.markdown(content)
+        with st.chat_message(role):
+            st.markdown(content)
 
-        else:
-            with st.chat_message("assistant"):
-                st.markdown(content)
+            provider = message.get(
+                "provider"
+            )
 
-                provider = message.get(
-                    "provider"
+            if provider:
+                st.caption(
+                    provider
                 )
 
-                if provider:
-                    st.caption(
-                        f"Provider: {provider}"
-                    )
 
-
-def render_uploaded_files():
-    files = st.session_state.get(
-        "uploaded_files",
-        [],
-    )
-
-    if not files:
-        return
-
+def render_empty_state():
     st.markdown(
-        "#### Attached files"
+        """
+        <div class="welcome-container">
+            <div class="welcome-icon">✦</div>
+            <div class="welcome-title">
+                How can I help you today?
+            </div>
+            <div class="welcome-subtitle">
+                Ask anything, upload a file,
+                or start a new conversation.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    for file_data in files:
-        name = file_data.get(
-            "name",
-            "Unknown file",
-        )
 
-        size = file_data.get(
-            "size"
-        )
+def render_composer():
+    render_file_chips()
 
-        if size:
-            size_kb = size / 1024
-
-            st.caption(
-                f"📎 {name} — {size_kb:.1f} KB"
-            )
-
-        else:
-            st.caption(
-                f"📎 {name}"
-            )
-
-
-def render_input_area():
     uploaded_files = st.file_uploader(
-        "Upload files",
+        "Attach files",
         type=[
             "txt",
             "md",
@@ -162,7 +121,7 @@ def render_input_area():
         )
 
     prompt = st.chat_input(
-        "Message your AI Agent..."
+        "Message My AI Agent..."
     )
 
     if prompt:
@@ -171,13 +130,38 @@ def render_input_area():
         )
 
 
+def render_file_chips():
+    files = st.session_state.get(
+        "uploaded_files",
+        [],
+    )
+
+    if not files:
+        return
+
+    chips = []
+
+    for file_data in files:
+        name = file_data.get(
+            "name",
+            "file",
+        )
+
+        chips.append(
+            f'<span class="file-chip">📎 {name}</span>'
+        )
+
+    st.markdown(
+        "".join(chips),
+        unsafe_allow_html=True,
+    )
+
+
 def process_uploads(
     uploaded_files,
 ):
     current_names = {
-        item.get(
-            "name"
-        )
+        item.get("name")
         for item in st.session_state.get(
             "uploaded_files",
             [],
@@ -346,16 +330,14 @@ def handle_user_message(
         st.rerun()
 
     except Exception as error:
-        error_message = (
-            f"AI Agent error: {error}"
-        )
-
         st.session_state[
             "messages"
         ].append(
             {
                 "role": "assistant",
-                "content": error_message,
+                "content": (
+                    f"AI Agent error: {error}"
+                ),
             }
         )
 
