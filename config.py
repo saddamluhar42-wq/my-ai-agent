@@ -60,6 +60,15 @@ ANTHROPIC_API_KEY_3 = os.getenv(
 
 
 # ============================================================
+# IMAGE GENERATION
+# ============================================================
+
+HF_TOKEN = os.getenv(
+    "HF_TOKEN"
+)
+
+
+# ============================================================
 # AI MODELS
 # ============================================================
 
@@ -272,6 +281,10 @@ def is_anthropic_configured():
     )
 
 
+def is_hf_configured():
+    return bool(HF_TOKEN)
+
+
 def is_tavily_configured():
     return bool(TAVILY_API_KEY)
 
@@ -294,6 +307,7 @@ def get_config_status():
         "cerebras": is_cerebras_configured(),
         "mistral": is_mistral_configured(),
         "anthropic": is_anthropic_configured(),
+        "huggingface": is_hf_configured(),
         "tavily": is_tavily_configured(),
         "database": is_database_configured(),
         "telegram": is_telegram_configured(),
