@@ -159,25 +159,22 @@ def render_chat_header():
         "Auto",
     )
 
-    if provider == "Auto":
-        provider_text = "Auto"
-    else:
-        provider_text = provider
+    provider_text = provider
 
     st.markdown(
         f"""
-        <div class="chat-header">
-            <div>
-                My AI Agent
-                <span style="
-                    color:#858585;
-                    font-weight:400;
-                    margin-left:8px;
-                ">
-                    {provider_text}
-                </span>
-            </div>
-        </div>
+<div class="chat-header">
+    <div>
+        My AI Agent
+        <span style="
+            color:#858585;
+            font-weight:400;
+            margin-left:8px;
+        ">
+            {provider_text}
+        </span>
+    </div>
+</div>
         """,
         unsafe_allow_html=True,
     )
@@ -191,37 +188,37 @@ def render_empty_state():
 
     st.markdown(
         """
-        <div class="empty-state">
+<div class="empty-state">
+    <div class="empty-state-icon">
+        ✦
+    </div>
 
-            <div class="empty-state-icon">
-                ✦
-            </div>
+    <div class="empty-state-title">
+        How can I help you today?
+    </div>
 
-            <div class="empty-state-title">
-                How can I help you today?
-            </div>
-
-            <div class="empty-state-subtitle">
-                Ask anything, upload a file,
-                or request an image.
-            </div>
-
-        </div>
+    <div class="empty-state-subtitle">
+        Ask anything, upload a file, or request an image.
+    </div>
+</div>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
         """
-        <div style="
-            width:min(820px,92%);
-            margin:38px auto 0 auto;
-        ">
+<div style="
+    width:min(820px,92%);
+    margin:38px auto 0 auto;
+">
         """,
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(
+        3,
+        gap="small",
+    )
 
     with col1:
 
@@ -230,6 +227,7 @@ def render_empty_state():
             use_container_width=True,
             key="suggest_explain",
         ):
+
             handle_user_message(
                 "Explain something interesting to me."
             )
@@ -241,6 +239,7 @@ def render_empty_state():
             use_container_width=True,
             key="suggest_write",
         ):
+
             handle_user_message(
                 "Help me write something useful."
             )
@@ -252,6 +251,7 @@ def render_empty_state():
             use_container_width=True,
             key="suggest_image",
         ):
+
             handle_user_message(
                 "Generate an image of a beautiful cinematic landscape."
             )
@@ -292,10 +292,6 @@ def render_messages():
 
         with st.chat_message(role):
 
-            # =================================================
-            # IMAGE MESSAGE
-            # =================================================
-
             if message_type == "image":
 
                 render_image_message(
@@ -305,19 +301,9 @@ def render_messages():
 
                 continue
 
-            # =================================================
-            # TEXT MESSAGE
-            # =================================================
-
             if content:
 
-                st.markdown(
-                    content
-                )
-
-            # =================================================
-            # PROVIDER
-            # =================================================
+                st.markdown(content)
 
             if (
                 role == "assistant"
@@ -328,13 +314,13 @@ def render_messages():
             ):
 
                 provider = message.get(
-                    "provider"
+                    "provider",
                 )
 
                 if provider:
 
                     model = message.get(
-                        "model"
+                        "model",
                     )
 
                     if model:
@@ -360,7 +346,7 @@ def render_image_message(
 ):
 
     image_data = message.get(
-        "image"
+        "image",
     )
 
     if not image_data:
@@ -386,11 +372,11 @@ def render_image_message(
     )
 
     provider = message.get(
-        "provider"
+        "provider",
     )
 
     model = message.get(
-        "model"
+        "model",
     )
 
     if provider:
@@ -616,10 +602,6 @@ def handle_pending_image_confirmation(
     if not pending_prompt:
         return False
 
-    # ========================================================
-    # YES
-    # ========================================================
-
     if is_yes_confirmation(prompt):
 
         st.session_state[
@@ -640,10 +622,6 @@ def handle_pending_image_confirmation(
         )
 
         return True
-
-    # ========================================================
-    # NO
-    # ========================================================
 
     if is_no_confirmation(prompt):
 
@@ -674,10 +652,6 @@ def handle_pending_image_confirmation(
         st.rerun()
 
         return True
-
-    # ========================================================
-    # INVALID CONFIRMATION
-    # ========================================================
 
     st.session_state[
         "messages"
@@ -745,7 +719,7 @@ def generate_confirmed_image(
             )
 
         image_data = result.get(
-            "image"
+            "image",
         )
 
         if not image_data:
@@ -820,9 +794,9 @@ def handle_user_message(
         "clarification_answer"
     ] = prompt
 
-    # ========================================================
+    # --------------------------------------------------------
     # PENDING IMAGE CONFIRMATION
-    # ========================================================
+    # --------------------------------------------------------
 
     if st.session_state.get(
         "pending_image_prompt"
@@ -834,9 +808,9 @@ def handle_user_message(
 
         return
 
-    # ========================================================
+    # --------------------------------------------------------
     # IMAGE REQUEST
-    # ========================================================
+    # --------------------------------------------------------
 
     if is_image_request(prompt):
 
@@ -855,9 +829,9 @@ def handle_user_message(
 
         return
 
-    # ========================================================
+    # --------------------------------------------------------
     # NORMAL TEXT CHAT
-    # ========================================================
+    # --------------------------------------------------------
 
     st.session_state[
         "messages"
@@ -948,11 +922,11 @@ def handle_user_message(
         )
 
         provider = result.get(
-            "provider"
+            "provider",
         )
 
         model = result.get(
-            "model"
+            "model",
         )
 
         if not answer:
@@ -992,7 +966,7 @@ def handle_user_message(
             {
                 "role": "assistant",
                 "content": (
-                    f"AI Agent error:\n\n"
+                    "AI Agent error:\n\n"
                     f"{error}"
                 ),
             }
