@@ -1,5 +1,2 @@
 streamlit
 psycopg[binary]
-google-genai
-huggingface_hub
-Pillow
