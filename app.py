@@ -36,8 +36,13 @@ GEMINI_URL = (
     f"{GEMINI_MODEL}:generateContent"
 )
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL = (
+    "https://openrouter.ai/api/v1/chat/completions"
+)
+
 TAVILY_URL = "https://api.tavily.com/search"
+
+APP_NAME = "My AI Agent"
 
 
 # ============================================================
@@ -74,20 +79,32 @@ if "last_provider" not in st.session_state:
 # ============================================================
 
 st.title("🤖 My AI Agent")
+
 st.caption(
     "Online AI Agent • Gemini + OpenRouter + Tavily + PostgreSQL"
 )
 
 
 # ============================================================
-# DATABASE
+# DATABASE CONNECTION
 # ============================================================
 
 def database_available():
     return bool(DATABASE_URL)
 
 
-def database_query(query, params=None, fetch="none"):
+def database_query(
+    query,
+    params=None,
+    fetch="none",
+):
+    """
+    Controlled server-side PostgreSQL helper.
+
+    The AI model never receives DATABASE_URL.
+    The AI model never executes SQL directly.
+    """
+
     if not DATABASE_URL:
         raise RuntimeError(
             "DATABASE_URL is not configured."
@@ -115,7 +132,7 @@ def database_query(query, params=None, fetch="none"):
 
 
 # ============================================================
-# DATABASE SCHEMA
+# DATABASE INITIALIZATION
 # ============================================================
 
 def initialize_database():
@@ -229,7 +246,7 @@ def initialize_database():
 
 
 # ============================================================
-# INITIALIZE DATABASE
+# DATABASE INITIALIZATION
 # ============================================================
 
 def ensure_database_initialized():
@@ -269,20 +286,14 @@ def get_or_create_user():
     if not database_available():
         return None
 
-    # --------------------------------------------------------
-    # TEMPORARY SINGLE-USER MODE
-    #
-    # This makes PostgreSQL memory survive Streamlit refreshes.
-    # Real authentication will replace this later.
-    # --------------------------------------------------------
-
     external_id = "default-user"
 
     row = database_query(
         """
         SELECT id
         FROM users
-        WHERE external_id = %s;
+        WHERE external_id = %s
+        LIMIT 1;
         """,
         (external_id,),
         fetch="one",
@@ -324,7 +335,7 @@ def get_latest_conversation(user_id):
         SELECT id
         FROM conversations
         WHERE user_id = %s
-        ORDER BY updated_at DESC
+        ORDER BY updated_at DESC, id DESC
         LIMIT 1;
         """,
         (user_id,),
@@ -362,10 +373,12 @@ def create_conversation(user_id):
 
 
 # ============================================================
-# LOAD SAVED MESSAGES
+# LOAD CONVERSATION
 # ============================================================
 
-def load_conversation_messages(conversation_id):
+def load_conversation_messages(
+    conversation_id,
+):
 
     if not conversation_id:
         return []
@@ -431,13 +444,12 @@ def load_persistent_memory():
                 )
             )
 
-        saved_messages = (
+        st.session_state.messages = (
             load_conversation_messages(
                 st.session_state.conversation_id
             )
         )
 
-        st.session_state.messages = saved_messages
         st.session_state.memory_loaded = True
 
     except Exception as error:
@@ -495,7 +507,7 @@ def save_message(
 
 
 # ============================================================
-# AGENT RUNS
+# AGENT RUN TRACKING
 # ============================================================
 
 def start_agent_run(
@@ -526,7 +538,7 @@ def start_agent_run(
             "running",
             json.dumps(
                 {
-                    "application": "My AI Agent",
+                    "application": APP_NAME,
                 }
             ),
         ),
@@ -566,7 +578,7 @@ def finish_agent_run(
 
 
 # ============================================================
-# DATABASE TEST
+# DATABASE BASIC TOOLS
 # ============================================================
 
 def test_database_connection():
@@ -601,6 +613,7 @@ def get_database_info():
     )
 
     return {
+        "status": "connected",
         "database": row[0],
         "user": row[1],
         "version": row[2],
@@ -635,21 +648,243 @@ def list_database_tables():
 
 
 # ============================================================
-# DATABASE COMMAND
+# NEW: LATEST AGENT RUNS TOOL
 # ============================================================
 
-def detect_database_command(user_input):
+def get_latest_agent_runs(limit=10):
+
+    safe_limit = max(
+        1,
+        min(int(limit), 25),
+    )
+
+    rows = database_query(
+        f"""
+        SELECT
+            ar.id,
+            ar.conversation_id,
+            ar.message_id,
+            ar.provider,
+            ar.model,
+            ar.status,
+            ar.error_message,
+            ar.started_at,
+            ar.completed_at
+        FROM agent_runs AS ar
+        ORDER BY ar.started_at DESC, ar.id DESC
+        LIMIT {safe_limit};
+        """,
+        fetch="all",
+    )
+
+    runs = []
+
+    for row in rows:
+
+        runs.append(
+            {
+                "id": row[0],
+                "conversation_id": row[1],
+                "message_id": row[2],
+                "provider": row[3],
+                "model": row[4],
+                "status": row[5],
+                "error_message": row[6],
+                "started_at": (
+                    row[7].isoformat()
+                    if row[7]
+                    else None
+                ),
+                "completed_at": (
+                    row[8].isoformat()
+                    if row[8]
+                    else None
+                ),
+            }
+        )
+
+    return runs
+
+
+# ============================================================
+# NEW: CURRENT CONVERSATION HISTORY TOOL
+# ============================================================
+
+def get_current_conversation_history(
+    limit=50,
+):
+
+    conversation_id = (
+        st.session_state.conversation_id
+    )
+
+    if not conversation_id:
+
+        return {
+            "conversation_id": None,
+            "messages": [],
+        }
+
+    safe_limit = max(
+        1,
+        min(int(limit), 100),
+    )
+
+    rows = database_query(
+        f"""
+        SELECT
+            id,
+            role,
+            content,
+            provider,
+            created_at
+        FROM messages
+        WHERE conversation_id = %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT {safe_limit};
+        """,
+        (conversation_id,),
+        fetch="all",
+    )
+
+    messages = []
+
+    for row in reversed(rows):
+
+        messages.append(
+            {
+                "id": row[0],
+                "role": row[1],
+                "content": row[2],
+                "provider": row[3],
+                "created_at": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "conversation_id": conversation_id,
+        "messages": messages,
+    }
+
+
+# ============================================================
+# NEW: SAVED MEMORY TOOL
+# ============================================================
+
+def get_saved_memory(limit=50):
+
+    result = (
+        get_current_conversation_history(
+            limit=limit
+        )
+    )
+
+    return {
+        "conversation_id": result[
+            "conversation_id"
+        ],
+        "memory": result["messages"],
+    }
+
+
+# ============================================================
+# DATABASE COMMAND DETECTION
+# ============================================================
+
+def detect_database_command(
+    user_input,
+):
 
     text = user_input.lower().strip()
 
-    if "list database tables" in text:
+    # --------------------------------------------------------
+    # AGENT RUNS
+    # --------------------------------------------------------
+
+    if any(
+        phrase in text
+        for phrase in [
+            "latest agent runs",
+            "latest agent run",
+            "recent agent runs",
+            "recent agent run",
+            "show agent runs",
+            "show me agent runs",
+            "agent run history",
+            "agent runs",
+            "agent run",
+        ]
+    ):
+
+        return "latest_agent_runs"
+
+    # --------------------------------------------------------
+    # CONVERSATION HISTORY
+    # --------------------------------------------------------
+
+    if any(
+        phrase in text
+        for phrase in [
+            "conversation history",
+            "chat history",
+            "show my history",
+            "show conversation",
+            "message history",
+        ]
+    ):
+
+        return "conversation_history"
+
+    # --------------------------------------------------------
+    # SAVED MEMORY
+    # --------------------------------------------------------
+
+    if any(
+        phrase in text
+        for phrase in [
+            "saved memory",
+            "show my memory",
+            "what do you remember",
+            "what is in memory",
+            "show memory",
+        ]
+    ):
+
+        return "saved_memory"
+
+    # --------------------------------------------------------
+    # TABLES
+    # --------------------------------------------------------
+
+    if (
+        "list database tables" in text
+        or "list tables" in text
+        or "show database tables" in text
+        or "show tables" in text
+    ):
+
         return "list_tables"
+
+    # --------------------------------------------------------
+    # DATABASE INFO
+    # --------------------------------------------------------
 
     if (
         "database info" in text
         or "database information" in text
+        or "postgres info" in text
+        or "postgresql info" in text
     ):
+
         return "database_info"
+
+    # --------------------------------------------------------
+    # CONNECTION TEST
+    # --------------------------------------------------------
 
     if (
         "test database connection" in text
@@ -657,13 +892,21 @@ def detect_database_command(user_input):
         or "test database" in text
         or "postgres connection" in text
         or "postgresql connection" in text
+        or "database health" in text
     ):
+
         return "test_connection"
 
     return None
 
 
-def run_database_tool(user_input):
+# ============================================================
+# RUN DATABASE TOOL
+# ============================================================
+
+def run_database_tool(
+    user_input,
+):
 
     command = detect_database_command(
         user_input
@@ -684,29 +927,85 @@ def run_database_tool(user_input):
 
     try:
 
+        # ----------------------------------------------------
+        # CONNECTION
+        # ----------------------------------------------------
+
         if command == "test_connection":
 
-            result = test_database_connection()
+            result = (
+                test_database_connection()
+            )
+
+        # ----------------------------------------------------
+        # DATABASE INFO
+        # ----------------------------------------------------
+
+        elif command == "database_info":
+
+            result = get_database_info()
+
+        # ----------------------------------------------------
+        # TABLES
+        # ----------------------------------------------------
 
         elif command == "list_tables":
 
             result = {
                 "status": "connected",
-                "tables": list_database_tables(),
+                "tables": (
+                    list_database_tables()
+                ),
             }
 
-        elif command == "database_info":
+        # ----------------------------------------------------
+        # AGENT RUNS
+        # ----------------------------------------------------
+
+        elif command == "latest_agent_runs":
 
             result = {
-                "status": "connected",
-                **get_database_info(),
+                "status": "success",
+                "runs": (
+                    get_latest_agent_runs(
+                        limit=10
+                    )
+                ),
+            }
+
+        # ----------------------------------------------------
+        # CONVERSATION
+        # ----------------------------------------------------
+
+        elif command == "conversation_history":
+
+            result = {
+                "status": "success",
+                **get_current_conversation_history(
+                    limit=50
+                ),
+            }
+
+        # ----------------------------------------------------
+        # MEMORY
+        # ----------------------------------------------------
+
+        elif command == "saved_memory":
+
+            result = {
+                "status": "success",
+                **get_saved_memory(
+                    limit=50
+                ),
             }
 
         else:
 
             result = {
                 "status": "error",
-                "message": "Unknown command.",
+                "message": (
+                    "Unknown PostgreSQL tool."
+                ),
             }
 
         return {
@@ -724,12 +1023,13 @@ def run_database_tool(user_input):
 
 
 # ============================================================
-# TAVILY
+# TAVILY WEB SEARCH
 # ============================================================
 
 def search_web(query):
 
     if not TAVILY_API_KEY:
+
         raise RuntimeError(
             "TAVILY_API_KEY is not configured."
         )
@@ -742,15 +1042,17 @@ def search_web(query):
         "max_results": 5,
     }
 
-    data = json.dumps(payload).encode(
-        "utf-8"
-    )
+    data = json.dumps(
+        payload
+    ).encode("utf-8")
 
     request = urllib.request.Request(
         TAVILY_URL,
         data=data,
         headers={
-            "Content-Type": "application/json",
+            "Content-Type": (
+                "application/json"
+            ),
         },
         method="POST",
     )
@@ -820,6 +1122,7 @@ def search_web(query):
 def ask_gemini(prompt):
 
     if not GEMINI_API_KEY:
+
         raise RuntimeError(
             "GEMINI_API_KEY is not configured."
         )
@@ -841,15 +1144,17 @@ def ask_gemini(prompt):
         },
     }
 
-    data = json.dumps(payload).encode(
-        "utf-8"
-    )
+    data = json.dumps(
+        payload
+    ).encode("utf-8")
 
     request = urllib.request.Request(
         f"{GEMINI_URL}?key={GEMINI_API_KEY}",
         data=data,
         headers={
-            "Content-Type": "application/json",
+            "Content-Type": (
+                "application/json"
+            ),
         },
         method="POST",
     )
@@ -877,6 +1182,7 @@ def ask_gemini(prompt):
         )
 
         if not candidates:
+
             raise RuntimeError(
                 "Gemini returned no candidates."
             )
@@ -920,6 +1226,7 @@ def ask_gemini(prompt):
 def ask_openrouter(prompt):
 
     if not OPENROUTER_API_KEY:
+
         raise RuntimeError(
             "OPENROUTER_API_KEY is not configured."
         )
@@ -934,9 +1241,9 @@ def ask_openrouter(prompt):
         ],
     }
 
-    data = json.dumps(payload).encode(
-        "utf-8"
-    )
+    data = json.dumps(
+        payload
+    ).encode("utf-8")
 
     request = urllib.request.Request(
         OPENROUTER_URL,
@@ -945,11 +1252,13 @@ def ask_openrouter(prompt):
             "Authorization": (
                 f"Bearer {OPENROUTER_API_KEY}"
             ),
-            "Content-Type": "application/json",
+            "Content-Type": (
+                "application/json"
+            ),
             "HTTP-Referer": (
                 "https://my-ai-agent-8no8.onrender.com"
             ),
-            "X-Title": "My AI Agent",
+            "X-Title": APP_NAME,
         },
         method="POST",
     )
@@ -977,6 +1286,7 @@ def ask_openrouter(prompt):
         )
 
         if not choices:
+
             raise RuntimeError(
                 "OpenRouter returned no choices."
             )
@@ -988,6 +1298,7 @@ def ask_openrouter(prompt):
         )
 
         if not answer:
+
             raise RuntimeError(
                 "OpenRouter returned empty response."
             )
@@ -1014,13 +1325,22 @@ def ask_openrouter(prompt):
 def ask_ai(prompt):
 
     gemini_error = None
+    openrouter_error = None
+
+    # --------------------------------------------------------
+    # GEMINI FIRST
+    # --------------------------------------------------------
 
     if GEMINI_API_KEY:
 
         try:
 
+            answer = ask_gemini(
+                prompt
+            )
+
             return (
-                ask_gemini(prompt),
+                answer,
                 "Gemini",
                 GEMINI_MODEL,
             )
@@ -1029,32 +1349,60 @@ def ask_ai(prompt):
 
             gemini_error = str(error)
 
+    # --------------------------------------------------------
+    # OPENROUTER FALLBACK
+    # --------------------------------------------------------
+
     if OPENROUTER_API_KEY:
 
         try:
 
+            answer = ask_openrouter(
+                prompt
+            )
+
             return (
-                ask_openrouter(prompt),
+                answer,
                 "OpenRouter",
                 OPENROUTER_MODEL,
             )
 
         except Exception as error:
 
-            raise RuntimeError(
-                "Gemini failed: "
-                f"{gemini_error or 'unknown error'}\n\n"
-                "OpenRouter failed: "
-                f"{error}"
-            )
+            openrouter_error = str(error)
+
+    # --------------------------------------------------------
+    # BOTH FAILED
+    # --------------------------------------------------------
+
+    errors = []
+
+    if gemini_error:
+
+        errors.append(
+            f"Gemini: {gemini_error}"
+        )
+
+    if openrouter_error:
+
+        errors.append(
+            f"OpenRouter: {openrouter_error}"
+        )
+
+    if not errors:
+
+        raise RuntimeError(
+            "Neither GEMINI_API_KEY nor "
+            "OPENROUTER_API_KEY is configured."
+        )
 
     raise RuntimeError(
-        "No AI provider is configured."
+        " | ".join(errors)
     )
 
 
 # ============================================================
-# MEMORY BUILDER
+# BUILD MEMORY
 # ============================================================
 
 def build_memory():
@@ -1065,11 +1413,17 @@ def build_memory():
 
     parts = []
 
-    for message in st.session_state.messages:
+    for message in (
+        st.session_state.messages
+    ):
 
-        role = message["role"].upper()
+        role = message[
+            "role"
+        ].upper()
 
-        content = message["content"]
+        content = message[
+            "content"
+        ]
 
         parts.append(
             f"{role}: {content}"
@@ -1091,10 +1445,12 @@ if st.session_state.database_error:
 
 
 # ============================================================
-# DISPLAY SAVED CHAT
+# DISPLAY CHAT HISTORY
 # ============================================================
 
-for message in st.session_state.messages:
+for message in (
+    st.session_state.messages
+):
 
     with st.chat_message(
         message["role"]
@@ -1133,7 +1489,7 @@ user_input = st.chat_input(
 if user_input:
 
     # --------------------------------------------------------
-    # USER MESSAGE
+    # SAVE USER TO SESSION
     # --------------------------------------------------------
 
     st.session_state.messages.append(
@@ -1148,7 +1504,7 @@ if user_input:
         st.markdown(user_input)
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE
+    # SAVE USER TO POSTGRESQL
     # --------------------------------------------------------
 
     try:
@@ -1168,11 +1524,19 @@ if user_input:
         )
 
     # --------------------------------------------------------
+    # BUILD CONVERSATION MEMORY
+    # --------------------------------------------------------
+
+    conversation = build_memory()
+
+    # --------------------------------------------------------
     # DATABASE TOOL
     # --------------------------------------------------------
 
-    database_result = run_database_tool(
-        user_input
+    database_result = (
+        run_database_tool(
+            user_input
+        )
     )
 
     database_context = ""
@@ -1180,7 +1544,7 @@ if user_input:
     if database_result:
 
         database_context = (
-            "POSTGRESQL TOOL RESULT:\n"
+            "POSTGRESQL DATABASE TOOL RESULT:\n"
             + json.dumps(
                 database_result,
                 indent=2,
@@ -1189,7 +1553,7 @@ if user_input:
         )
 
     # --------------------------------------------------------
-    # WEB SEARCH
+    # WEB SEARCH DETECTION
     # --------------------------------------------------------
 
     search_words = [
@@ -1200,17 +1564,30 @@ if user_input:
         "recent",
         "abhi",
         "aaj",
+        "latest update",
+        "price",
+        "weather",
         "search",
         "internet",
         "online",
-        "price",
-        "weather",
+        "who is",
+        "what happened",
     ]
 
     should_search = any(
         word in user_input.lower()
         for word in search_words
     )
+
+    # IMPORTANT:
+    # PostgreSQL commands should NOT trigger Tavily.
+    if database_result:
+
+        should_search = False
+
+    # --------------------------------------------------------
+    # WEB CONTEXT
+    # --------------------------------------------------------
 
     web_context = ""
 
@@ -1239,38 +1616,44 @@ if user_input:
                 + search_sources
             )
 
-        except Exception:
+        except Exception as error:
 
             web_context = (
-                "Web search failed."
+                "Web search failed: "
+                + str(error)
             )
 
     # --------------------------------------------------------
-    # PROMPT
+    # AI PROMPT
     # --------------------------------------------------------
 
     prompt = f"""
 You are My AI Agent.
 
-Answer the user's latest request clearly and accurately.
+Your job is to understand the user's request
+and provide a clear, useful answer.
 
 Rules:
 
 1. Use conversation memory when relevant.
 2. Never invent database results.
-3. Never expose API keys or secrets.
-4. PostgreSQL operations are performed by the application.
-5. Use PostgreSQL tool results when available.
-6. Use web-search context when available.
-7. Do not claim to remember something unless it exists
-   in the supplied conversation memory.
-8. Answer in the user's language when appropriate.
+3. Never expose API keys, passwords, tokens,
+   DATABASE_URL, or system secrets.
+4. PostgreSQL operations are performed by the
+   application-side tools.
+5. When PostgreSQL tool results are supplied,
+   use those actual results.
+6. Never claim that a database operation was
+   executed unless the PostgreSQL tool result
+   is supplied.
+7. Current/latest information should use the
+   supplied web-search context.
+8. If PostgreSQL tool context is supplied,
+   do not invent additional database rows.
+9. Answer in the user's language when appropriate.
+10. Keep answers practical and easy to understand.
 
-CONVERSATION MEMORY:
-
-{build_memory()}
-
-POSTGRESQL CONTEXT:
+POSTGRESQL DATABASE CONTEXT:
 
 {database_context}
 
@@ -1278,9 +1661,15 @@ WEB SEARCH CONTEXT:
 
 {web_context}
 
+CONVERSATION MEMORY:
+
+{conversation}
+
 LATEST USER REQUEST:
 
 {user_input}
+
+Respond directly to the latest user request.
 """
 
     # --------------------------------------------------------
@@ -1292,15 +1681,20 @@ LATEST USER REQUEST:
         with st.spinner("Thinking..."):
 
             run_id = None
+            assistant_message_id = None
 
             try:
 
-                answer, provider, model = ask_ai(
+                (
+                    answer,
+                    provider,
+                    model,
+                ) = ask_ai(
                     prompt
                 )
 
                 # --------------------------------------------
-                # AGENT RUN
+                # START AGENT RUN
                 # --------------------------------------------
 
                 try:
@@ -1313,12 +1707,14 @@ LATEST USER REQUEST:
                         model=model,
                     )
 
-                except Exception:
+                except Exception as error:
 
-                    run_id = None
+                    st.session_state.database_error = (
+                        str(error)
+                    )
 
                 # --------------------------------------------
-                # PROVIDER
+                # PROVIDER DISPLAY
                 # --------------------------------------------
 
                 provider_parts = [
@@ -1337,12 +1733,14 @@ LATEST USER REQUEST:
                         "PostgreSQL"
                     )
 
-                provider_text = " + ".join(
-                    provider_parts
+                provider_text = (
+                    " + ".join(
+                        provider_parts
+                    )
                 )
 
                 # --------------------------------------------
-                # DISPLAY
+                # DISPLAY ANSWER
                 # --------------------------------------------
 
                 st.markdown(answer)
@@ -1368,10 +1766,8 @@ LATEST USER REQUEST:
                 )
 
                 # --------------------------------------------
-                # DATABASE MEMORY
+                # SAVE ASSISTANT MESSAGE
                 # --------------------------------------------
-
-                assistant_message_id = None
 
                 try:
 
@@ -1388,12 +1784,12 @@ LATEST USER REQUEST:
 
                 except Exception as error:
 
-                    st.session_state.database_error = str(
-                        error
+                    st.session_state.database_error = (
+                        str(error)
                     )
 
                 # --------------------------------------------
-                # FINISH RUN
+                # FINISH AGENT RUN
                 # --------------------------------------------
 
                 if run_id:
@@ -1408,8 +1804,11 @@ LATEST USER REQUEST:
                             ),
                         )
 
-                    except Exception:
-                        pass
+                    except Exception as error:
+
+                        st.session_state.database_error = (
+                            str(error)
+                        )
 
             except Exception as error:
 
