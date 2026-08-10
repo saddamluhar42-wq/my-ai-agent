@@ -5,8 +5,11 @@ import urllib.request
 from config import (
     AI_TEMPERATURE,
     OPENROUTER_API_KEY,
+    OPENROUTER_API_KEY_2,
     OPENROUTER_MODEL,
+    OPENROUTER_MODEL_2,
     OPENROUTER_URL,
+    OPENROUTER_URL_2,
     RENDER_URL,
     REQUEST_TIMEOUT,
 )
@@ -17,21 +20,27 @@ class OpenRouterError(Exception):
 
 
 def is_configured():
-    return bool(OPENROUTER_API_KEY)
+    return bool(
+        OPENROUTER_API_KEY
+        or OPENROUTER_API_KEY_2
+    )
 
 
-def generate(
+def _generate_with_key(
+    api_key,
+    model,
+    url,
     prompt,
     temperature=None,
     max_tokens=None,
 ):
-    if not OPENROUTER_API_KEY:
+    if not api_key:
         raise OpenRouterError(
-            "OPENROUTER_API_KEY is not configured."
+            "OpenRouter API key is not configured."
         )
 
     payload = {
-        "model": OPENROUTER_MODEL,
+        "model": model,
         "messages": [
             {
                 "role": "user",
@@ -49,13 +58,13 @@ def generate(
         payload["max_tokens"] = max_tokens
 
     request = urllib.request.Request(
-        OPENROUTER_URL,
+        url,
         data=json.dumps(
             payload
         ).encode("utf-8"),
         headers={
             "Authorization": (
-                f"Bearer {OPENROUTER_API_KEY}"
+                f"Bearer {api_key}"
             ),
             "Content-Type": "application/json",
             "HTTP-Referer": RENDER_URL,
@@ -152,9 +161,74 @@ def generate(
     return answer
 
 
+def generate(
+    prompt,
+    temperature=None,
+    max_tokens=None,
+):
+    errors = []
+
+    keys = [
+        {
+            "name": "OpenRouter",
+            "key": OPENROUTER_API_KEY,
+            "model": OPENROUTER_MODEL,
+            "url": OPENROUTER_URL,
+        },
+        {
+            "name": "OpenRouter-2",
+            "key": OPENROUTER_API_KEY_2,
+            "model": OPENROUTER_MODEL_2,
+            "url": OPENROUTER_URL_2,
+        },
+    ]
+
+    for item in keys:
+        if not item["key"]:
+            continue
+
+        try:
+            answer = _generate_with_key(
+                api_key=item["key"],
+                model=item["model"],
+                url=item["url"],
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            return {
+                "answer": answer,
+                "provider": item["name"],
+                "model": item["model"],
+            }
+
+        except Exception as error:
+            errors.append(
+                f'{item["name"]}: {error}'
+            )
+
+    if not errors:
+        raise OpenRouterError(
+            "No OpenRouter API key is configured."
+        )
+
+    raise OpenRouterError(
+        "All OpenRouter keys failed.\n"
+        + "\n".join(errors)
+    )
+
+
 def get_provider_info():
     return {
         "provider": "OpenRouter",
         "model": OPENROUTER_MODEL,
         "configured": is_configured(),
+        "keys_configured": sum(
+            bool(key)
+            for key in [
+                OPENROUTER_API_KEY,
+                OPENROUTER_API_KEY_2,
+            ]
+        ),
     }
