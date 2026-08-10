@@ -2,6 +2,7 @@ from ai import anthropic
 from ai import cerebras
 from ai import gemini
 from ai import groq
+from ai import huggingface
 from ai import mistral
 from ai import openrouter
 
@@ -34,6 +35,66 @@ def get_available_providers():
     return providers
 
 
+def is_image_generation_available():
+    return huggingface.is_configured()
+
+
+def generate_image(
+    prompt,
+):
+    """
+    Generate an image using Hugging Face.
+
+    IMPORTANT:
+    This function must only be called after
+    the user has explicitly confirmed image generation.
+    """
+
+    if not huggingface.is_configured():
+        raise AgentError(
+            "Hugging Face image generation is not configured."
+        )
+
+    if not prompt or not prompt.strip():
+        raise AgentError(
+            "Image prompt cannot be empty."
+        )
+
+    try:
+        image_bytes = huggingface.generate_image_bytes(
+            prompt=prompt.strip(),
+        )
+
+        if not image_bytes:
+            raise AgentError(
+                "Hugging Face returned an empty image."
+            )
+
+        provider_info = (
+            huggingface.get_provider_info()
+        )
+
+        return {
+            "image": image_bytes,
+            "provider": provider_info[
+                "provider"
+            ],
+            "model": provider_info[
+                "model"
+            ],
+            "type": "image",
+        }
+
+    except AgentError:
+        raise
+
+    except Exception as error:
+        raise AgentError(
+            f"Hugging Face image generation failed: "
+            f"{error}"
+        ) from error
+
+
 def generate(
     prompt,
     preferred_provider=None,
@@ -41,7 +102,7 @@ def generate(
     max_tokens=None,
 ):
     """
-    Generate an AI response.
+    Generate an AI text response.
 
     Provider priority:
     1. Explicitly requested provider
@@ -51,6 +112,10 @@ def generate(
     5. Cerebras
     6. Mistral
     7. Anthropic
+
+    Image generation is NOT triggered here.
+    Image generation requires an explicit confirmation
+    followed by a separate generate_image() call.
     """
 
     providers = []
@@ -122,6 +187,7 @@ def generate(
                     "model": gemini.get_provider_info()[
                         "model"
                     ],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -148,6 +214,7 @@ def generate(
                     "answer": result["answer"],
                     "provider": result["provider"],
                     "model": result["model"],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -176,6 +243,7 @@ def generate(
                     "model": groq.get_provider_info()[
                         "model"
                     ],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -204,6 +272,7 @@ def generate(
                     "model": cerebras.get_provider_info()[
                         "model"
                     ],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -232,6 +301,7 @@ def generate(
                     "model": mistral.get_provider_info()[
                         "model"
                     ],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -258,6 +328,7 @@ def generate(
                     "answer": result["answer"],
                     "provider": result["provider"],
                     "model": result["model"],
+                    "type": "text",
                 }
 
             except Exception as error:
@@ -296,4 +367,7 @@ def provider_status():
         "Cerebras": cerebras.is_configured(),
         "Mistral": mistral.is_configured(),
         "Anthropic": anthropic.is_configured(),
+        "Hugging Face Image": (
+            huggingface.is_configured()
+        ),
     }
