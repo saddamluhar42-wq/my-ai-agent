@@ -2,7 +2,11 @@ from io import BytesIO
 
 from huggingface_hub import InferenceClient
 
-from config import HF_TOKEN
+from config import (
+    HF_TOKEN,
+    HF_TOKEN_2,
+    HF_TOKEN_3,
+)
 
 
 class HuggingFaceError(Exception):
@@ -12,47 +16,91 @@ class HuggingFaceError(Exception):
 MODEL = "black-forest-labs/FLUX.1-schnell"
 
 
+def get_available_tokens():
+    tokens = []
+
+    if HF_TOKEN:
+        tokens.append(
+            (
+                "HF_TOKEN",
+                HF_TOKEN,
+            )
+        )
+
+    if HF_TOKEN_2:
+        tokens.append(
+            (
+                "HF_TOKEN_2",
+                HF_TOKEN_2,
+            )
+        )
+
+    if HF_TOKEN_3:
+        tokens.append(
+            (
+                "HF_TOKEN_3",
+                HF_TOKEN_3,
+            )
+        )
+
+    return tokens
+
+
 def is_configured():
-    return bool(HF_TOKEN)
+    return bool(
+        get_available_tokens()
+    )
 
 
 def generate_image(
     prompt,
     model=MODEL,
 ):
-    if not HF_TOKEN:
-        raise HuggingFaceError(
-            "HF_TOKEN is not configured."
-        )
-
     if not prompt or not prompt.strip():
         raise HuggingFaceError(
             "Image prompt cannot be empty."
         )
 
-    try:
-        client = InferenceClient(
-            api_key=HF_TOKEN,
-            provider="auto",
-        )
+    tokens = get_available_tokens()
 
-        image = client.text_to_image(
-            prompt=prompt.strip(),
-            model=model,
-        )
-
-    except Exception as error:
+    if not tokens:
         raise HuggingFaceError(
-            f"Hugging Face image generation failed: "
-            f"{error}"
-        ) from error
-
-    if image is None:
-        raise HuggingFaceError(
-            "Hugging Face returned no image."
+            "No Hugging Face API token is configured."
         )
 
-    return image
+    errors = []
+
+    for token_name, token in tokens:
+
+        try:
+            client = InferenceClient(
+                api_key=token,
+                provider="auto",
+            )
+
+            image = client.text_to_image(
+                prompt=prompt.strip(),
+                model=model,
+            )
+
+            if image is None:
+                errors.append(
+                    f"{token_name}: "
+                    "Hugging Face returned no image."
+                )
+                continue
+
+            return image
+
+        except Exception as error:
+            errors.append(
+                f"{token_name}: {error}"
+            )
+
+    raise HuggingFaceError(
+        "All Hugging Face API keys failed.\n"
+        + "\n".join(errors)
+    )
 
 
 def generate_image_bytes(
@@ -75,8 +123,11 @@ def generate_image_bytes(
 
 
 def get_provider_info():
+    tokens = get_available_tokens()
+
     return {
         "provider": "Hugging Face",
         "model": MODEL,
-        "configured": is_configured(),
+        "configured": bool(tokens),
+        "token_count": len(tokens),
     }
