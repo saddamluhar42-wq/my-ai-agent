@@ -1,3 +1,4 @@
+from ai import cerebras
 from ai import gemini
 from ai import groq
 from ai import openrouter
@@ -19,6 +20,9 @@ def get_available_providers():
     if groq.is_configured():
         providers.append("Groq")
 
+    if cerebras.is_configured():
+        providers.append("Cerebras")
+
     return providers
 
 
@@ -36,6 +40,7 @@ def generate(
     2. Gemini
     3. OpenRouter
     4. Groq
+    5. Cerebras
     """
 
     providers = []
@@ -52,6 +57,9 @@ def generate(
         elif provider == "groq":
             providers.append("Groq")
 
+        elif provider == "cerebras":
+            providers.append("Cerebras")
+
     if "Gemini" not in providers:
         providers.append("Gemini")
 
@@ -60,6 +68,9 @@ def generate(
 
     if "Groq" not in providers:
         providers.append("Groq")
+
+    if "Cerebras" not in providers:
+        providers.append("Cerebras")
 
     errors = []
 
@@ -149,6 +160,34 @@ def generate(
                     f"Groq: {error}"
                 )
 
+        elif provider == "Cerebras":
+
+            if not cerebras.is_configured():
+                errors.append(
+                    "Cerebras: API key not configured."
+                )
+                continue
+
+            try:
+                answer = cerebras.generate(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+                return {
+                    "answer": answer,
+                    "provider": "Cerebras",
+                    "model": cerebras.get_provider_info()[
+                        "model"
+                    ],
+                }
+
+            except Exception as error:
+                errors.append(
+                    f"Cerebras: {error}"
+                )
+
     if not errors:
         raise AgentError(
             "No AI provider is configured."
@@ -177,4 +216,5 @@ def provider_status():
         "Gemini": gemini.is_configured(),
         "OpenRouter": openrouter.is_configured(),
         "Groq": groq.is_configured(),
+        "Cerebras": cerebras.is_configured(),
     }
