@@ -1,3 +1,4 @@
+from ai import anthropic
 from ai import cerebras
 from ai import gemini
 from ai import groq
@@ -27,6 +28,9 @@ def get_available_providers():
     if mistral.is_configured():
         providers.append("Mistral")
 
+    if anthropic.is_configured():
+        providers.append("Anthropic")
+
     return providers
 
 
@@ -46,6 +50,7 @@ def generate(
     4. Groq
     5. Cerebras
     6. Mistral
+    7. Anthropic
     """
 
     providers = []
@@ -68,6 +73,12 @@ def generate(
         elif provider == "mistral":
             providers.append("Mistral")
 
+        elif provider in (
+            "anthropic",
+            "claude",
+        ):
+            providers.append("Anthropic")
+
     if "Gemini" not in providers:
         providers.append("Gemini")
 
@@ -82,6 +93,9 @@ def generate(
 
     if "Mistral" not in providers:
         providers.append("Mistral")
+
+    if "Anthropic" not in providers:
+        providers.append("Anthropic")
 
     errors = []
 
@@ -124,18 +138,16 @@ def generate(
                 continue
 
             try:
-                answer = openrouter.generate(
+                result = openrouter.generate(
                     prompt=prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
 
                 return {
-                    "answer": answer,
-                    "provider": "OpenRouter",
-                    "model": openrouter.get_provider_info()[
-                        "model"
-                    ],
+                    "answer": result["answer"],
+                    "provider": result["provider"],
+                    "model": result["model"],
                 }
 
             except Exception as error:
@@ -227,6 +239,32 @@ def generate(
                     f"Mistral: {error}"
                 )
 
+        elif provider == "Anthropic":
+
+            if not anthropic.is_configured():
+                errors.append(
+                    "Anthropic: API key not configured."
+                )
+                continue
+
+            try:
+                result = anthropic.generate(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+                return {
+                    "answer": result["answer"],
+                    "provider": result["provider"],
+                    "model": result["model"],
+                }
+
+            except Exception as error:
+                errors.append(
+                    f"Anthropic: {error}"
+                )
+
     if not errors:
         raise AgentError(
             "No AI provider is configured."
@@ -257,4 +295,5 @@ def provider_status():
         "Groq": groq.is_configured(),
         "Cerebras": cerebras.is_configured(),
         "Mistral": mistral.is_configured(),
+        "Anthropic": anthropic.is_configured(),
     }
