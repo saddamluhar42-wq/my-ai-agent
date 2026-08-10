@@ -1,2 +1,4 @@
 streamlit
 psycopg[binary]
+pypdf
+python-docx
