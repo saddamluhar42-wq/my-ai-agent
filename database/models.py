@@ -1,6 +1,10 @@
 from database.connection import execute, execute_script
 
 
+# ============================================================
+# DATABASE SCHEMA
+# ============================================================
+
 SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS users (
@@ -11,6 +15,7 @@ SCHEMA = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     """,
+
     """
     CREATE TABLE IF NOT EXISTS conversations (
         id BIGSERIAL PRIMARY KEY,
@@ -22,6 +27,7 @@ SCHEMA = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     """,
+
     """
     CREATE TABLE IF NOT EXISTS messages (
         id BIGSERIAL PRIMARY KEY,
@@ -34,6 +40,7 @@ SCHEMA = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     """,
+
     """
     CREATE TABLE IF NOT EXISTS agent_runs (
         id BIGSERIAL PRIMARY KEY,
@@ -52,6 +59,7 @@ SCHEMA = [
         metadata JSONB
     );
     """,
+
     """
     CREATE TABLE IF NOT EXISTS user_settings (
         id BIGSERIAL PRIMARY KEY,
@@ -64,18 +72,32 @@ SCHEMA = [
         UNIQUE(user_id, setting_key)
     );
     """,
+
     """
     CREATE INDEX IF NOT EXISTS idx_conversations_user_id
     ON conversations(user_id);
     """,
+
+    """
+    CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
+    ON conversations(updated_at DESC);
+    """,
+
     """
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
     ON messages(conversation_id);
     """,
+
+    """
+    CREATE INDEX IF NOT EXISTS idx_messages_created_at
+    ON messages(created_at);
+    """,
+
     """
     CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation_id
     ON agent_runs(conversation_id);
     """,
+
     """
     CREATE INDEX IF NOT EXISTS idx_user_settings_user_id
     ON user_settings(user_id);
@@ -83,9 +105,17 @@ SCHEMA = [
 ]
 
 
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
 def initialize_database():
     execute_script(SCHEMA)
 
+
+# ============================================================
+# USERS
+# ============================================================
 
 def get_or_create_user(
     external_id,
@@ -93,7 +123,8 @@ def get_or_create_user(
 ):
     row = execute(
         """
-        SELECT id
+        SELECT
+            id
         FROM users
         WHERE external_id = %s
         LIMIT 1;
@@ -103,6 +134,20 @@ def get_or_create_user(
     )
 
     if row:
+        execute(
+            """
+            UPDATE users
+            SET
+                display_name = %s,
+                updated_at = NOW()
+            WHERE id = %s;
+            """,
+            (
+                display_name,
+                row[0],
+            ),
+        )
+
         return row[0]
 
     row = execute(
@@ -124,13 +169,18 @@ def get_or_create_user(
     return row[0]
 
 
+# ============================================================
+# CONVERSATIONS
+# ============================================================
+
 def get_or_create_conversation(
     user_id,
     title="New Conversation",
 ):
     row = execute(
         """
-        SELECT id
+        SELECT
+            id
         FROM conversations
         WHERE user_id = %s
         ORDER BY updated_at DESC, id DESC
@@ -162,9 +212,157 @@ def get_or_create_conversation(
     return row[0]
 
 
+def create_conversation(
+    user_id,
+    title="New Conversation",
+):
+    row = execute(
+        """
+        INSERT INTO conversations (
+            user_id,
+            title
+        )
+        VALUES (%s, %s)
+        RETURNING id;
+        """,
+        (
+            user_id,
+            title,
+        ),
+        fetch="one",
+    )
+
+    return row[0]
+
+
+def get_conversation(
+    conversation_id,
+):
+    if not conversation_id:
+        return None
+
+    row = execute(
+        """
+        SELECT
+            id,
+            user_id,
+            title,
+            created_at,
+            updated_at
+        FROM conversations
+        WHERE id = %s
+        LIMIT 1;
+        """,
+        (conversation_id,),
+        fetch="one",
+    )
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "title": row[2],
+        "created_at": row[3],
+        "updated_at": row[4],
+    }
+
+
+def get_recent_conversations(
+    user_id,
+    limit=30,
+):
+    if not user_id:
+        return []
+
+    safe_limit = max(
+        1,
+        min(int(limit), 100),
+    )
+
+    rows = execute(
+        f"""
+        SELECT
+            c.id,
+            c.user_id,
+            c.title,
+            c.created_at,
+            c.updated_at,
+            COALESCE(
+                (
+                    SELECT m.content
+                    FROM messages m
+                    WHERE m.conversation_id = c.id
+                      AND m.role = 'user'
+                    ORDER BY m.created_at ASC, m.id ASC
+                    LIMIT 1
+                ),
+                c.title
+            ) AS first_message,
+            (
+                SELECT COUNT(*)
+                FROM messages m2
+                WHERE m2.conversation_id = c.id
+            ) AS message_count
+        FROM conversations c
+        WHERE c.user_id = %s
+        ORDER BY c.updated_at DESC, c.id DESC
+        LIMIT {safe_limit};
+        """,
+        (user_id,),
+        fetch="all",
+    )
+
+    return [
+        {
+            "id": row[0],
+            "user_id": row[1],
+            "title": row[2],
+            "created_at": row[3],
+            "updated_at": row[4],
+            "first_message": row[5],
+            "message_count": row[6],
+        }
+        for row in rows
+    ]
+
+
+def update_conversation_title(
+    conversation_id,
+    title,
+):
+    if not conversation_id:
+        return
+
+    clean_title = str(
+        title or "New Conversation"
+    ).strip()
+
+    if not clean_title:
+        clean_title = "New Conversation"
+
+    execute(
+        """
+        UPDATE conversations
+        SET
+            title = %s,
+            updated_at = NOW()
+        WHERE id = %s;
+        """,
+        (
+            clean_title,
+            conversation_id,
+        ),
+    )
+
+
 def update_conversation_timestamp(
     conversation_id,
 ):
+    if not conversation_id:
+        return
+
     execute(
         """
         UPDATE conversations
@@ -174,6 +372,10 @@ def update_conversation_timestamp(
         (conversation_id,),
     )
 
+
+# ============================================================
+# MESSAGES
+# ============================================================
 
 def create_message(
     conversation_id,
@@ -212,6 +414,9 @@ def get_messages(
     conversation_id,
     limit=50,
 ):
+    if not conversation_id:
+        return []
+
     safe_limit = max(
         1,
         min(int(limit), 100),
@@ -234,6 +439,10 @@ def get_messages(
         fetch="all",
     )
 
+
+# ============================================================
+# AGENT RUNS
+# ============================================================
 
 def create_agent_run(
     conversation_id,
