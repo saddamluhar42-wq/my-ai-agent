@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from agent.evolution import evolve_from_interaction
@@ -128,6 +129,13 @@ class AgentCore:
             "preferred_provider"
         )
 
+        current_time_utc = datetime.now(
+            timezone.utc
+        )
+
+        current_time_local = datetime.now(
+        ).astimezone()
+
         # ----------------------------------------------------
         # BUILD AI PROMPT
         # ----------------------------------------------------
@@ -140,6 +148,8 @@ class AgentCore:
             file_context=file_context,
             recent_messages=recent_messages,
             preferred_provider=preferred_provider,
+            current_time_utc=current_time_utc,
+            current_time_local=current_time_local,
         )
 
         # ----------------------------------------------------
@@ -288,6 +298,8 @@ class AgentCore:
         file_context: str,
         recent_messages,
         preferred_provider=None,
+        current_time_utc=None,
+        current_time_local=None,
     ) -> str:
 
         skill_lines = []
@@ -443,6 +455,36 @@ class AgentCore:
             )
 
         # ----------------------------------------------------
+        # CURRENT TIME
+        # ----------------------------------------------------
+
+        time_lines = []
+
+        if current_time_utc is not None:
+
+            time_lines.append(
+                f"UTC: {current_time_utc.isoformat()}"
+            )
+
+        if current_time_local is not None:
+
+            time_lines.append(
+                f"Local: {current_time_local.isoformat()}"
+            )
+
+        if time_lines:
+
+            sections.extend(
+                [
+                    "",
+                    "CURRENT TIME CONTEXT:",
+                    "\n".join(
+                        time_lines
+                    ),
+                ]
+            )
+
+        # ----------------------------------------------------
         # BEHAVIOR
         # ----------------------------------------------------
 
@@ -463,7 +505,8 @@ class AgentCore:
                 "11. Clearly distinguish facts from uncertainty.",
                 "12. If a task needs external information "
                 "and no tool is available, say so.",
-                "13. Keep the answer appropriate to the user's request.",
+                "13. Use current time context for date/time-sensitive questions.",
+                "14. Keep the answer appropriate to the user's request.",
                 "",
                 "SELF-EVOLUTION:",
                 "The agent has a persistent learning system.",
