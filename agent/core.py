@@ -1,6 +1,8 @@
 from typing import Any, Dict, Optional
 
+from agent.evolution import evolve_from_interaction
 from agent.executor import ExecutionResult
+from agent.knowledge import build_knowledge_context
 from agent.planner import create_plan
 from ai.agent import AgentError, generate
 
@@ -15,18 +17,27 @@ class AgentCore:
              ↓
         Planner
              ↓
-        Memory / Context
+        Memory
+             ↓
+        Persistent Knowledge
+             ↓
+        File Context
              ↓
         Existing AI Engine
              ↓
-        Verification metadata
-             ↓
         Final Answer
+             ↓
+        Evolution Engine
+             ↓
+        Persistent Learning
     """
 
     def __init__(self):
+
         self.name = "My AI Agent Core"
-        self.version = "1.0.0"
+        self.version = "1.1.0"
+
+        self.evolution_enabled = True
 
     def run(
         self,
@@ -34,9 +45,12 @@ class AgentCore:
         context: Optional[Dict[str, Any]] = None,
     ) -> ExecutionResult:
 
-        query = str(query or "").strip()
+        query = str(
+            query or ""
+        ).strip()
 
         if not query:
+
             return ExecutionResult(
                 answer="Please enter a question.",
                 success=False,
@@ -45,15 +59,95 @@ class AgentCore:
 
         context = context or {}
 
-        plan = create_plan(query)
+        plan = create_plan(
+            query
+        )
+
+        user_id = context.get(
+            "user_id"
+        )
+
+        # ----------------------------------------------------
+        # MEMORY
+        # ----------------------------------------------------
+
+        memory_context = str(
+            context.get(
+                "memory_context",
+                "",
+            )
+            or ""
+        ).strip()
+
+        # ----------------------------------------------------
+        # PERSISTENT KNOWLEDGE
+        # ----------------------------------------------------
+
+        knowledge_context = ""
+
+        try:
+
+            knowledge_context = (
+                build_knowledge_context(
+                    user_id=user_id,
+                    query=query,
+                    limit=20,
+                )
+            )
+
+        except Exception:
+            # Knowledge must never break normal AI chat.
+            knowledge_context = ""
+
+        # ----------------------------------------------------
+        # FILE CONTEXT
+        # ----------------------------------------------------
+
+        file_context = str(
+            context.get(
+                "file_context",
+                "",
+            )
+            or ""
+        ).strip()
+
+        # ----------------------------------------------------
+        # RECENT MESSAGES
+        # ----------------------------------------------------
+
+        recent_messages = context.get(
+            "recent_messages",
+            [],
+        )
+
+        # ----------------------------------------------------
+        # PROVIDER PREFERENCE
+        # ----------------------------------------------------
+
+        preferred_provider = context.get(
+            "preferred_provider"
+        )
+
+        # ----------------------------------------------------
+        # BUILD AI PROMPT
+        # ----------------------------------------------------
 
         prompt = self._build_prompt(
             query=query,
             plan=plan,
-            context=context,
+            memory_context=memory_context,
+            knowledge_context=knowledge_context,
+            file_context=file_context,
+            recent_messages=recent_messages,
+            preferred_provider=preferred_provider,
         )
 
+        # ----------------------------------------------------
+        # AI GENERATION
+        # ----------------------------------------------------
+
         try:
+
             result = generate(
                 prompt=prompt
             )
@@ -62,11 +156,16 @@ class AgentCore:
             raise
 
         except Exception as error:
+
             raise AgentError(
                 f"Agent core failed: {error}"
             ) from error
 
-        if not isinstance(result, dict):
+        if not isinstance(
+            result,
+            dict,
+        ):
+
             raise AgentError(
                 "AI engine returned an invalid result."
             )
@@ -76,9 +175,11 @@ class AgentCore:
                 "answer",
                 "",
             )
+            or ""
         ).strip()
 
         if not answer:
+
             raise AgentError(
                 "AI engine returned an empty answer."
             )
@@ -91,59 +192,108 @@ class AgentCore:
             or ""
         )
 
+        model = str(
+            result.get(
+                "model",
+                "",
+            )
+            or ""
+        )
+
+        # ----------------------------------------------------
+        # SELF EVOLUTION
+        # ----------------------------------------------------
+
+        evolution_result = {
+            "enabled": False,
+            "learned": [],
+            "count": 0,
+        }
+
+        if (
+            self.evolution_enabled
+            and user_id is not None
+        ):
+
+            try:
+
+                evolution_result = (
+                    evolve_from_interaction(
+                        user_id=user_id,
+                        query=query,
+                        answer=answer,
+                    )
+                )
+
+            except Exception as error:
+
+                evolution_result = {
+                    "enabled": True,
+                    "learned": [],
+                    "count": 0,
+                    "error": str(error),
+                }
+
+        # ----------------------------------------------------
+        # RESULT
+        # ----------------------------------------------------
+
+        metadata = {
+            "agent_version": self.version,
+
+            "primary_skill": (
+                plan.primary_skill
+            ),
+
+            "steps": [
+                {
+                    "order": step.order,
+                    "skill": step.skill_name,
+                    "purpose": step.purpose,
+                }
+                for step in plan.steps
+            ],
+
+            "requires_memory": (
+                plan.requires_memory
+            ),
+
+            "requires_verification": (
+                plan.requires_verification
+            ),
+
+            "model": model,
+
+            "knowledge_used": bool(
+                knowledge_context
+            ),
+
+            "evolution": evolution_result,
+        }
+
         return ExecutionResult(
             answer=answer,
             success=True,
             provider=provider,
             skill=plan.primary_skill,
-            metadata={
-                "agent_version": self.version,
-                "primary_skill": (
-                    plan.primary_skill
-                ),
-                "steps": [
-                    {
-                        "order": step.order,
-                        "skill": step.skill_name,
-                        "purpose": step.purpose,
-                    }
-                    for step in plan.steps
-                ],
-                "requires_memory": (
-                    plan.requires_memory
-                ),
-                "requires_verification": (
-                    plan.requires_verification
-                ),
-            },
+            metadata=metadata,
         )
 
     def _build_prompt(
         self,
         query: str,
         plan,
-        context: Dict[str, Any],
+        memory_context: str,
+        knowledge_context: str,
+        file_context: str,
+        recent_messages,
+        preferred_provider=None,
     ) -> str:
-
-        memory = str(
-            context.get(
-                "memory_context",
-                "",
-            )
-            or ""
-        ).strip()
-
-        file_context = str(
-            context.get(
-                "file_context",
-                "",
-            )
-            or ""
-        ).strip()
 
         skill_lines = []
 
         for step in plan.steps:
+
             skill_lines.append(
                 f"{step.order}. "
                 f"{step.skill_name}: "
@@ -155,57 +305,187 @@ class AgentCore:
         )
 
         sections = [
+
             "You are My AI Agent.",
+
             "",
-            "You can reason across multiple capabilities.",
-            "Use the available context when relevant.",
-            "Do not invent information that is unavailable.",
+
+            "You are a general-purpose intelligent AI agent.",
+
+            "You should understand the user's actual goal "
+            "before answering.",
+
+            "Use available memory, persistent knowledge, "
+            "files, and conversation context when relevant.",
+
+            "Do not invent facts, sources, files, tool results, "
+            "or capabilities.",
+
             "",
+
             "SELECTED AGENT PLAN:",
+
             skills_text,
+
             "",
+
             "USER QUESTION:",
+
             query,
         ]
 
-        if memory:
+        # ----------------------------------------------------
+        # PERSISTENT KNOWLEDGE
+        # ----------------------------------------------------
+
+        if knowledge_context:
+
             sections.extend(
                 [
                     "",
-                    "RELEVANT MEMORY:",
-                    memory,
+                    "PERSISTENT KNOWLEDGE:",
+                    knowledge_context,
                 ]
             )
 
-        if file_context:
+        # ----------------------------------------------------
+        # CONVERSATION MEMORY
+        # ----------------------------------------------------
+
+        if memory_context:
+
             sections.extend(
                 [
                     "",
-                    "FILE CONTEXT:",
+                    "RELEVANT CONVERSATION MEMORY:",
+                    memory_context,
+                ]
+            )
+
+        # ----------------------------------------------------
+        # RECENT MESSAGES
+        # ----------------------------------------------------
+
+        if recent_messages:
+
+            recent_lines = []
+
+            for message in recent_messages:
+
+                if not isinstance(
+                    message,
+                    dict,
+                ):
+                    continue
+
+                role = str(
+                    message.get(
+                        "role",
+                        "",
+                    )
+                ).upper()
+
+                content = str(
+                    message.get(
+                        "content",
+                        "",
+                    )
+                    or ""
+                ).strip()
+
+                if not content:
+                    continue
+
+                recent_lines.append(
+                    f"{role}: {content}"
+                )
+
+            if recent_lines:
+
+                sections.extend(
+                    [
+                        "",
+                        "RECENT CONVERSATION:",
+                        "\n".join(
+                            recent_lines
+                        ),
+                    ]
+                )
+
+        # ----------------------------------------------------
+        # FILE CONTEXT
+        # ----------------------------------------------------
+
+        if file_context:
+
+            sections.extend(
+                [
+                    "",
+                    "UPLOADED FILE CONTEXT:",
                     file_context,
                 ]
             )
 
+        # ----------------------------------------------------
+        # PROVIDER
+        # ----------------------------------------------------
+
+        if preferred_provider:
+
+            sections.extend(
+                [
+                    "",
+                    "PREFERRED AI PROVIDER:",
+                    str(
+                        preferred_provider
+                    ),
+                ]
+            )
+
+        # ----------------------------------------------------
+        # BEHAVIOR
+        # ----------------------------------------------------
+
         sections.extend(
             [
                 "",
-                "RESPONSE RULES:",
-                "1. Understand the user's actual intent.",
-                "2. Use the selected skill appropriately.",
-                "3. Use memory only when relevant.",
-                "4. If information is uncertain, say so.",
-                "5. Do not fabricate sources or facts.",
-                "6. Give a direct and useful answer.",
-                "7. If the task requires a tool that is not",
-                "   available, clearly state that limitation.",
+                "CORE BEHAVIOR:",
+                "1. Understand intent before answering.",
+                "2. Give the most useful answer possible.",
+                "3. Use relevant persistent knowledge.",
+                "4. Use relevant conversation memory.",
+                "5. Use uploaded files when they are relevant.",
+                "6. Do not blindly trust old memory.",
+                "7. Do not fabricate missing information.",
+                "8. Clearly distinguish facts from uncertainty.",
+                "9. If a task needs external information "
+                "and no tool is available, say so.",
+                "10. Keep the answer appropriate to the user's request.",
+                "",
+                "SELF-EVOLUTION:",
+                "The agent has a persistent learning system.",
+                "After answering, useful interaction information "
+                "may be evaluated for future retention.",
+                "Do not claim that you learned something permanently "
+                "unless the system actually stored it.",
             ]
         )
 
-        return "\n".join(sections)
+        return "\n".join(
+            sections
+        )
 
+
+# ============================================================
+# GLOBAL CORE
+# ============================================================
 
 _core = AgentCore()
 
+
+# ============================================================
+# PUBLIC API
+# ============================================================
 
 def run_agent(
     query: str,
@@ -219,4 +499,21 @@ def run_agent(
 
 
 def get_agent_core() -> AgentCore:
+
     return _core
+
+
+def set_evolution_enabled(
+    enabled: bool,
+):
+
+    _core.evolution_enabled = bool(
+        enabled
+    )
+
+
+def is_evolution_enabled() -> bool:
+
+    return bool(
+        _core.evolution_enabled
+    )
