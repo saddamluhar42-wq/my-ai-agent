@@ -20,7 +20,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.3.0"
+        self.version = "1.3.1"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -197,12 +197,8 @@ class AgentCore:
     def _build_web_context(self, query: str, plan) -> str:
         if not is_tavily_configured():
             return "Web search is not configured."
-
-        # Browse by default for substantive questions. This prevents the old
-        # keyword-only gate from missing current or externally verifiable facts.
         if not self._should_search_web(query=query, plan=plan):
             return ""
-
         search_query = self._build_search_query(query)
         try:
             result = tavily_search(search_query, search_depth="advanced", max_results=5, include_answer=True)
@@ -218,9 +214,6 @@ class AgentCore:
         text = str(query or "").strip()
         if not text:
             return False
-
-        # Keep trivial chat acknowledgements local, but browse substantive
-        # questions by default so the agent is genuinely web-aware.
         normalized = re.sub(r"[^a-z0-9\u0900-\u097f]+", " ", text.lower()).strip()
         trivial = {
             "hi", "hello", "hey", "ok", "okay", "ha", "haa", "yes", "no", "done", "thanks", "thank you",
@@ -228,18 +221,20 @@ class AgentCore:
         }
         if normalized in trivial:
             return False
-
         return len(normalized.split()) >= 2 or "?" in text or len(text) >= 12
 
     @staticmethod
     def _build_search_query(query: str) -> str:
         text = str(query or "").strip()
-        if not text:
-            return "current information"
-        return text
+        return text or "current information"
 
 
 _core = AgentCore()
+
+
+def get_agent_core() -> AgentCore:
+    """Return the singleton core used by the Streamlit and Telegram integrations."""
+    return _core
 
 
 def run_agent(query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
