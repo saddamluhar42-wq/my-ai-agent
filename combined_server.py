@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import signal
 import subprocess
@@ -13,7 +14,7 @@ from typing import Any, AsyncIterator
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from api.openai_compat import chat_completion
 from api.server import ChatCompletionRequest, verify_key
 
@@ -91,14 +92,50 @@ def models(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     }
 
 
+def _stream_response(result: dict[str, Any]) -> AsyncIterator[str]:
+    async def generator() -> AsyncIterator[str]:
+        choice = result["choices"][0]
+        content = choice["message"].get("content", "")
+        model = result.get("model", "my-ai-agent")
+        response_id = result.get("id", "chatcmpl-my-ai-agent")
+
+        first = {
+            "id": response_id,
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+        }
+        yield f"data: {json.dumps(first, ensure_ascii=False)}\n\n"
+
+        chunk = {
+            "id": response_id,
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+        }
+        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+        final = {
+            "id": response_id,
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+        yield f"data: {json.dumps(final, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return generator()
+
+
 @api_app.post("/v1/chat/completions")
 def completions(
     request: ChatCompletionRequest,
     authorization: str | None = Header(default=None),
-) -> dict[str, Any]:
+):
     verify_key(authorization)
-    if request.stream:
-        raise HTTPException(status_code=400, detail="Streaming is not supported yet.")
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages must not be empty.")
 
@@ -110,8 +147,20 @@ def completions(
     if not user_messages:
         raise HTTPException(status_code=400, detail="At least one user message is required.")
 
-    result = chat_completion(user_messages[-1])
+    try:
+        result = chat_completion(user_messages[-1])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     result["model"] = request.model or "my-ai-agent"
+
+    if request.stream:
+        return StreamingResponse(
+            _stream_response(result),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+
     return result
 
 
