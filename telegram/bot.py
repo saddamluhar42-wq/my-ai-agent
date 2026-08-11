@@ -1,4 +1,5 @@
 import json
+import threading
 import urllib.error
 import urllib.request
 
@@ -6,17 +7,30 @@ from config import (
     REQUEST_TIMEOUT,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_MESSAGE_LIMIT,
+    TELEGRAM_POLL_TIMEOUT,
     TELEGRAM_URL,
 )
 
+
+# ============================================================
+# TELEGRAM ERROR
+# ============================================================
 
 class TelegramError(Exception):
     """Raised when Telegram Bot API fails."""
 
 
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 def is_configured():
     return bool(TELEGRAM_BOT_TOKEN)
 
+
+# ============================================================
+# TELEGRAM API
+# ============================================================
 
 def api_call(
     method,
@@ -52,7 +66,6 @@ def api_call(
                 or REQUEST_TIMEOUT
             ),
         ) as response:
-
             raw = response.read().decode(
                 "utf-8"
             )
@@ -97,51 +110,46 @@ def api_call(
     return result
 
 
+# ============================================================
+# TELEGRAM METHODS
+# ============================================================
+
 def get_me():
-    return api_call("getMe")
+    return api_call(
+        "getMe"
+    )
 
 
-def set_webhook(
-    webhook_url,
-    drop_pending_updates=False,
+def get_updates(
+    offset=None,
 ):
-    if not webhook_url:
-        raise TelegramError(
-            "Webhook URL cannot be empty."
-        )
+    payload = {
+        "timeout": TELEGRAM_POLL_TIMEOUT,
+        "allowed_updates": [
+            "message"
+        ],
+    }
 
-    return api_call(
-        "setWebhook",
-        {
-            "url": webhook_url,
-            "drop_pending_updates": (
-                drop_pending_updates
-            ),
-            "allowed_updates": [
-                "message"
-            ],
-        },
+    if offset is not None:
+        payload["offset"] = offset
+
+    result = api_call(
+        "getUpdates",
+        payload,
+        timeout=(
+            TELEGRAM_POLL_TIMEOUT + 15
+        ),
+    )
+
+    return result.get(
+        "result",
+        [],
     )
 
 
-def get_webhook_info():
-    return api_call(
-        "getWebhookInfo"
-    )
-
-
-def delete_webhook(
-    drop_pending_updates=False,
-):
-    return api_call(
-        "deleteWebhook",
-        {
-            "drop_pending_updates": (
-                drop_pending_updates
-            ),
-        },
-    )
-
+# ============================================================
+# SEND MESSAGE
+# ============================================================
 
 def send_message(
     chat_id,
@@ -172,16 +180,114 @@ def send_message(
         )
 
 
+# ============================================================
+# SEND PHOTO
+# ============================================================
+
+def send_photo(
+    chat_id,
+    photo,
+    caption=None,
+):
+    if not photo:
+        raise TelegramError(
+            "Photo URL or file identifier is required."
+        )
+
+    payload = {
+        "chat_id": chat_id,
+        "photo": photo,
+    }
+
+    if caption:
+        payload["caption"] = str(
+            caption
+        )[:1024]
+
+    return api_call(
+        "sendPhoto",
+        payload,
+    )
+
+
+# ============================================================
+# SEND DOCUMENT
+# ============================================================
+
+def send_document(
+    chat_id,
+    document,
+    caption=None,
+):
+    if not document:
+        raise TelegramError(
+            "Document URL or file identifier is required."
+        )
+
+    payload = {
+        "chat_id": chat_id,
+        "document": document,
+    }
+
+    if caption:
+        payload["caption"] = str(
+            caption
+        )[:1024]
+
+    return api_call(
+        "sendDocument",
+        payload,
+    )
+
+
+# ============================================================
+# DELETE WEBHOOK
+# ============================================================
+
+def delete_webhook():
+    return api_call(
+        "deleteWebhook",
+        {
+            "drop_pending_updates": False,
+        },
+    )
+
+
+# ============================================================
+# SET WEBHOOK
+# ============================================================
+
+def set_webhook(
+    webhook_url,
+):
+    if not webhook_url:
+        raise TelegramError(
+            "Webhook URL is required."
+        )
+
+    return api_call(
+        "setWebhook",
+        {
+            "url": webhook_url,
+        },
+    )
+
+
+# ============================================================
+# GET WEBHOOK INFO
+# ============================================================
+
+def get_webhook_info():
+    return api_call(
+        "getWebhookInfo"
+    )
+
+
+# ============================================================
+# TELEGRAM BOT
+# ============================================================
+
 class TelegramBot:
-    """
-    Telegram API helper for webhook architecture.
-
-    IMPORTANT:
-    This class does NOT run getUpdates polling.
-
-    Telegram sends updates directly to the
-    Render webhook endpoint.
-    """
 
     def __init__(
         self,
@@ -191,6 +297,13 @@ class TelegramBot:
             message_handler
         )
 
+        self._thread = None
+
+        self._stop_event = (
+            threading.Event()
+        )
+
+        self._offset = None
         self._running = False
 
     @property
@@ -202,6 +315,10 @@ class TelegramBot:
         handler,
     ):
         self.message_handler = handler
+
+    def stop(self):
+        self._stop_event.set()
+        self._running = False
 
     def process_update(
         self,
@@ -229,7 +346,6 @@ class TelegramBot:
             )
 
         except Exception as error:
-
             chat = message.get(
                 "chat",
                 {},
@@ -240,22 +356,56 @@ class TelegramBot:
             )
 
             if chat_id:
-
                 try:
                     send_message(
                         chat_id,
-                        (
-                            "Agent error:\n"
-                            + str(error)[:700]
-                        ),
+                        "Agent error:\n"
+                        + str(error)[:700],
                     )
 
                 except Exception:
                     pass
 
-    def configure_webhook(
+    def poll_once(self):
+        updates = get_updates(
+            offset=self._offset
+        )
+
+        for update in updates:
+
+            update_id = update.get(
+                "update_id"
+            )
+
+            if update_id is not None:
+                self._offset = (
+                    update_id + 1
+                )
+
+            self.process_update(
+                update
+            )
+
+    def _poll_loop(self):
+        self._running = True
+
+        while not self._stop_event.is_set():
+
+            try:
+                self.poll_once()
+
+            except Exception:
+
+                if self._stop_event.wait(
+                    5
+                ):
+                    break
+
+        self._running = False
+
+    def start(
         self,
-        webhook_url,
+        background=True,
     ):
         if not is_configured():
             raise TelegramError(
@@ -263,21 +413,32 @@ class TelegramBot:
                 "is not configured."
             )
 
-        result = set_webhook(
-            webhook_url=webhook_url,
-            drop_pending_updates=False,
+        delete_webhook()
+
+        if not background:
+            self._poll_loop()
+            return
+
+        if (
+            self._thread
+            and self._thread.is_alive()
+        ):
+            return
+
+        self._stop_event.clear()
+
+        self._thread = threading.Thread(
+            target=self._poll_loop,
+            name="telegram-bot",
+            daemon=True,
         )
 
-        self._running = True
+        self._thread.start()
 
-        return result
 
-    def webhook_info(self):
-        return get_webhook_info()
-
-    def stop(self):
-        self._running = False
-
+# ============================================================
+# BOT FACTORY
+# ============================================================
 
 def create_bot(
     message_handler=None,
