@@ -538,9 +538,10 @@ class AgentCore:
                 "12. If a task needs external information "
                 "and no tool is available, say so.",
                 "13. Use current time context for date/time-sensitive questions.",
-                "14. Keep the answer appropriate to the user's request.",
-                "15. If the answer depends on current or external facts, prefer web search first when available.",
-                "16. If you still do not know the answer, say: \"I can research that for you if you want.\"",
+                "14. Match the user's language, script, and typing style exactly.",
+                "15. Keep the answer appropriate to the user's request.",
+                "16. If the answer depends on current or external facts, prefer web search first when available.",
+                "17. If you still do not know the answer, say: \"I can research that for you if you want.\"",
                 "",
                 "SELF-EVOLUTION:",
                 "The agent has a persistent learning system.",
