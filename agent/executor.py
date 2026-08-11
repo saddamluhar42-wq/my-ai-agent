@@ -7,6 +7,10 @@ from agent.planner import (
     create_plan,
 )
 
+from skills.video_generation import (
+    generate_video,
+)
+
 
 @dataclass
 class ExecutionResult:
@@ -24,7 +28,7 @@ class AgentExecutor:
     Executes an AgentPlan through registered
     skill handlers.
 
-    The executor supports:
+    Supports:
 
     - primary skill execution
     - supporting skill execution
@@ -32,6 +36,7 @@ class AgentExecutor:
     - structured execution metadata
     - graceful handler failures
     - runtime skill registration
+    - built-in AI video generation
     """
 
     def __init__(self):
@@ -39,6 +44,175 @@ class AgentExecutor:
             str,
             Callable,
         ] = {}
+
+        self._register_builtin_handlers()
+
+    # ========================================================
+    # BUILT-IN HANDLERS
+    # ========================================================
+
+    def _register_builtin_handlers(self):
+        """
+        Register built-in agent capabilities.
+        """
+
+        self.register_handler(
+            "video_generation",
+            self._handle_video_generation,
+        )
+
+    # ========================================================
+    # VIDEO GENERATION
+    # ========================================================
+
+    def _handle_video_generation(
+        self,
+        query: str,
+        plan: AgentPlan,
+        context: Dict[str, Any],
+    ) -> ExecutionResult:
+
+        video_prompt = str(
+            context.get(
+                "video_prompt",
+                query,
+            )
+            or query
+        ).strip()
+
+        duration = self._safe_int(
+            context.get(
+                "video_duration",
+                5,
+            ),
+            default=5,
+            minimum=1,
+            maximum=300,
+        )
+
+        aspect_ratio = str(
+            context.get(
+                "video_aspect_ratio",
+                "16:9",
+            )
+            or "16:9"
+        ).strip()
+
+        style = str(
+            context.get(
+                "video_style",
+                "cinematic",
+            )
+            or "cinematic"
+        ).strip()
+
+        negative_prompt = str(
+            context.get(
+                "video_negative_prompt",
+                "",
+            )
+            or ""
+        ).strip()
+
+        image_input = context.get(
+            "video_image_input"
+        )
+
+        provider = context.get(
+            "video_provider"
+        )
+
+        result = generate_video(
+            prompt=video_prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            style=style,
+            image_input=image_input,
+            negative_prompt=negative_prompt,
+            provider=provider,
+            metadata={
+                "source": "agent_executor",
+                "query": query,
+            },
+        )
+
+        metadata = dict(
+            result.metadata or {}
+        )
+
+        metadata.update(
+            {
+                "video_prompt": video_prompt,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+                "style": style,
+            }
+        )
+
+        if not result.success:
+
+            return ExecutionResult(
+                answer=(
+                    "Video generation could not be "
+                    "completed. "
+                    f"{result.error}"
+                ).strip(),
+                success=False,
+                provider=result.provider,
+                skill="video_generation",
+                metadata={
+                    **metadata,
+                    "status": result.status,
+                    "job_id": result.job_id,
+                    "error": result.error,
+                },
+            )
+
+        answer = (
+            "AI video generation completed."
+        )
+
+        if result.video_url:
+            answer += (
+                f"\nVideo: {result.video_url}"
+            )
+
+        return ExecutionResult(
+            answer=answer,
+            success=True,
+            provider=result.provider,
+            skill="video_generation",
+            metadata={
+                **metadata,
+                "status": result.status,
+                "job_id": result.job_id,
+                "video_url": result.video_url,
+            },
+        )
+
+    @staticmethod
+    def _safe_int(
+        value,
+        default: int,
+        minimum: int,
+        maximum: int,
+    ) -> int:
+
+        try:
+            value = int(value)
+        except (
+            TypeError,
+            ValueError,
+        ):
+            value = default
+
+        return max(
+            minimum,
+            min(
+                value,
+                maximum,
+            ),
+        )
 
     # ========================================================
     # HANDLER REGISTRATION
@@ -335,22 +509,17 @@ class AgentExecutor:
                     result
                 )
 
-                # Allow later skills to use
-                # earlier execution results.
                 context[
                     f"skill_result:{skill_name}"
                 ] = result
 
-            # Primary skill failure should stop
-            # execution unless another step can
-            # meaningfully continue.
             if (
                 step.order == 1
                 and not result.success
             ):
 
                 return ExecutionResult(
-                    answer="",
+                    answer=result.answer,
                     success=False,
                     provider=result.provider,
                     skill=plan.primary_skill,
@@ -379,9 +548,7 @@ class AgentExecutor:
             )
 
         # ----------------------------------------------------
-        # Final result is the primary result unless it
-        # produced no answer, then use the latest useful
-        # supporting result.
+        # Final result
         # ----------------------------------------------------
 
         primary_result = (
