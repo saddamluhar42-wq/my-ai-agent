@@ -1,11 +1,15 @@
 import threading
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from streamlit.web import cli as stcli
 
-from config import RENDER_URL, TELEGRAM_BOT_TOKEN
+from config import (
+    RENDER_URL,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_WEBHOOK_SECRET,
+)
 from telegram.bot import create_bot
 from telegram.handlers import create_message_handler
 
@@ -27,6 +31,29 @@ app = FastAPI(
 telegram_bot = create_bot(
     message_handler=create_message_handler()
 )
+
+
+def verify_telegram_webhook_secret(request: Request) -> None:
+    """
+    Reject webhook traffic unless Telegram's secret token matches.
+    """
+
+    if not TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram webhook secret is not configured.",
+        )
+
+    provided_secret = request.headers.get(
+        "X-Telegram-Bot-Api-Secret-Token",
+        "",
+    ).strip()
+
+    if not provided_secret or provided_secret != TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid Telegram webhook secret.",
+        )
 
 
 # ============================================================
@@ -60,27 +87,26 @@ async def health():
 async def telegram_webhook(
     request: Request,
 ):
+    verify_telegram_webhook_secret(request)
+
     try:
         update = await request.json()
 
-        telegram_bot.process_update(
-            update
-        )
-
-        return JSONResponse(
-            {
-                "ok": True
-            }
-        )
-
     except Exception as error:
-        return JSONResponse(
-            {
-                "ok": False,
-                "error": str(error)[:700],
-            },
-            status_code=200,
-        )
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Telegram webhook payload.",
+        ) from error
+
+    telegram_bot.process_update(
+        update
+    )
+
+    return JSONResponse(
+        {
+            "ok": True
+        }
+    )
 
 
 # ============================================================

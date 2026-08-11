@@ -333,7 +333,10 @@ def upgrade(chat):
 def handle(message):
     chat = str(message["chat"]["id"])
 
-    if CHAT_ID and chat != str(CHAT_ID):
+    if not CHAT_ID:
+        return
+
+    if chat != str(CHAT_ID):
         return
 
     text = (message.get("text") or "").strip()
@@ -427,7 +430,7 @@ def start_background_services():
     except Exception:
         pass
 
-    if BOT_TOKEN:
+    if BOT_TOKEN and CHAT_ID:
         threading.Thread(
             target=telegram_loop,
             daemon=True,

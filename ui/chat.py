@@ -11,6 +11,7 @@ from ai.agent import (
     generate_image,
     is_image_generation_available,
 )
+from config import MAX_FILE_SIZE_MB
 from database.memory import (
     build_memory_context,
     get_recent_messages,
@@ -625,7 +626,7 @@ def render_composer():
         "Message My AI Agent...",
         accept_file="multiple",
         file_type=ALLOWED_FILE_TYPES,
-        max_upload_size=200,
+        max_upload_size=MAX_FILE_SIZE_MB,
         key="main_chat_input",
     )
 

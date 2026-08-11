@@ -304,6 +304,10 @@ TELEGRAM_BOT_TOKEN = os.getenv(
     "TELEGRAM_BOT_TOKEN"
 )
 
+TELEGRAM_WEBHOOK_SECRET = os.getenv(
+    "TELEGRAM_WEBHOOK_SECRET"
+)
+
 
 # ============================================================
 # API URLS
@@ -646,6 +650,10 @@ def is_database_configured():
 
 def is_telegram_configured():
     return bool(TELEGRAM_BOT_TOKEN)
+
+
+def is_telegram_webhook_secret_configured():
+    return bool(TELEGRAM_WEBHOOK_SECRET)
 
 
 # ============================================================
