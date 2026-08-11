@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+import logging
 
 
 # ============================================================
@@ -98,6 +99,9 @@ class VideoGenerationManager:
     """Central manager for AI video generation."""
 
     def __init__(self) -> None:
+
+        self._logger = logging.getLogger(__name__)
+        self._provider_load_errors: Dict[str, str] = {}
 
         self._providers: Dict[
             str,
@@ -222,8 +226,13 @@ class VideoGenerationManager:
                 priority=100,
             )
 
-        except Exception:
-            pass
+        except Exception as error:
+            self._provider_load_errors["google"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            self._logger.exception(
+                "Failed to load Google video provider."
+            )
 
         # ----------------------------------------------------
         # RUNWAY
@@ -251,8 +260,13 @@ class VideoGenerationManager:
                 priority=90,
             )
 
-        except Exception:
-            pass
+        except Exception as error:
+            self._provider_load_errors["runway"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            self._logger.exception(
+                "Failed to load Runway video provider."
+            )
 
         # ----------------------------------------------------
         # LUMA
@@ -280,8 +294,13 @@ class VideoGenerationManager:
                 priority=80,
             )
 
-        except Exception:
-            pass
+        except Exception as error:
+            self._provider_load_errors["luma"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            self._logger.exception(
+                "Failed to load Luma video provider."
+            )
 
         # ----------------------------------------------------
         # KLING
@@ -303,8 +322,13 @@ class VideoGenerationManager:
                 priority=70,
             )
 
-        except Exception:
-            pass
+        except Exception as error:
+            self._provider_load_errors["kling"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            self._logger.exception(
+                "Failed to load Kling video provider."
+            )
 
         # ----------------------------------------------------
         # REPLICATE
@@ -332,8 +356,13 @@ class VideoGenerationManager:
                 priority=60,
             )
 
-        except Exception:
-            pass
+        except Exception as error:
+            self._provider_load_errors["replicate"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            self._logger.exception(
+                "Failed to load Replicate video provider."
+            )
 
     # ========================================================
     # PROVIDER ACCESS
@@ -432,7 +461,16 @@ class VideoGenerationManager:
                 entry.configured_checker()
             )
 
-        except Exception:
+        except Exception as error:
+            self._logger.exception(
+                "Provider configuration check failed for '%s'.",
+                entry.name,
+            )
+            self._provider_load_errors.setdefault(
+                entry.name,
+                f"Configuration check failed: "
+                f"{type(error).__name__}: {error}",
+            )
             return False
 
     # ========================================================
@@ -468,6 +506,26 @@ class VideoGenerationManager:
                 ),
                 "priority": entry.priority,
             }
+
+            load_error = self._provider_load_errors.get(
+                entry.name
+            )
+            if load_error:
+                status[entry.name]["load_error"] = load_error
+
+        # Include providers that failed during import and therefore
+        # could not be registered at all.
+        for provider_name, load_error in (
+            self._provider_load_errors.items()
+        ):
+            if provider_name not in status:
+                status[provider_name] = {
+                    "enabled": False,
+                    "configured": False,
+                    "available": False,
+                    "priority": None,
+                    "load_error": load_error,
+                }
 
         return status
 
