@@ -1,9 +1,4 @@
-"""Single Render entrypoint for the Streamlit UI and OpenAI-compatible API.
-
-The public Render port is handled by this ASGI proxy. Streamlit and FastAPI run
-on private localhost ports, so the existing UI and the /v1 API can share one
-Render Web Service without changing the UI architecture.
-"""
+"""Single Render entrypoint for the Streamlit UI and OpenAI-compatible API."""
 
 from __future__ import annotations
 
@@ -13,14 +8,14 @@ import signal
 import subprocess
 import sys
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-from urllib.parse import urlsplit
+from typing import Any, AsyncIterator
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
-from api.server import app as api_app
+from api.openai_compat import chat_completion
+from api.server import ChatCompletionRequest, verify_key
 
 STREAMLIT_HOST = "127.0.0.1"
 STREAMLIT_PORT = 8501
@@ -47,12 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stderr=sys.stderr,
     )
 
-    api_config = uvicorn.Config(
-        api_app,
-        host=API_HOST,
-        port=API_PORT,
-        log_level="info",
-    )
+    api_config = uvicorn.Config(api_app, host=API_HOST, port=API_PORT, log_level="info")
     api_server = uvicorn.Server(api_config)
     api_task = asyncio.create_task(api_server.serve())
 
@@ -71,7 +61,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:
                 pass
             await asyncio.sleep(0.5)
-
         yield
     finally:
         api_server.should_exit = True
@@ -84,10 +73,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 streamlit.kill()
 
 
+api_app = FastAPI(title="My AI Agent Internal API", version="1.0.0")
 app = FastAPI(title="My AI Agent Gateway", version="1.0.0", lifespan=lifespan)
 
-# Mount the OpenAI-compatible API under the same public service.
-app.mount("/v1", api_app)
+
+@api_app.get("/health")
+def api_health() -> dict[str, str]:
+    return {"status": "ok", "service": "my-ai-agent-api"}
+
+
+@api_app.get("/v1/models")
+def models(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    verify_key(authorization)
+    return {
+        "object": "list",
+        "data": [{"id": "my-ai-agent", "object": "model", "owned_by": "my-ai-agent"}],
+    }
+
+
+@api_app.post("/v1/chat/completions")
+def completions(
+    request: ChatCompletionRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    verify_key(authorization)
+    if request.stream:
+        raise HTTPException(status_code=400, detail="Streaming is not supported yet.")
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="messages must not be empty.")
+
+    user_messages = [
+        message.content.strip()
+        for message in request.messages
+        if message.role == "user" and message.content.strip()
+    ]
+    if not user_messages:
+        raise HTTPException(status_code=400, detail="At least one user message is required.")
+
+    result = chat_completion(user_messages[-1])
+    result["model"] = request.model or "my-ai-agent"
+    return result
 
 
 @app.get("/health")
@@ -95,7 +120,43 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "service": "my-ai-agent"}
 
 
-async def proxy_http(request: Request) -> Response:
+@app.api_route(
+    "/v1/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
+async def api_proxy(request: Request, path: str) -> Response:
+    body = await request.body()
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length"}
+    }
+    target = f"http://{API_HOST}:{API_PORT}/v1/{path}"
+    if request.url.query:
+        target += f"?{request.url.query}"
+
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        upstream = await client.request(
+            request.method,
+            target,
+            headers=headers,
+            content=body,
+            timeout=None,
+        )
+
+    excluded = {"content-length", "transfer-encoding", "connection"}
+    response_headers = {
+        key: value for key, value in upstream.headers.items() if key.lower() not in excluded
+    }
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=response_headers,
+        media_type=upstream.headers.get("content-type"),
+    )
+
+
+async def streamlit_http_proxy(request: Request) -> Response:
     body = await request.body()
     headers = {
         key: value
@@ -117,9 +178,7 @@ async def proxy_http(request: Request) -> Response:
 
     excluded = {"content-length", "transfer-encoding", "connection"}
     response_headers = {
-        key: value
-        for key, value in upstream.headers.items()
-        if key.lower() not in excluded
+        key: value for key, value in upstream.headers.items() if key.lower() not in excluded
     }
     return Response(
         content=upstream.content,
@@ -134,14 +193,11 @@ async def proxy_http(request: Request) -> Response:
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
 )
 async def streamlit_proxy(request: Request, path: str) -> Response:
-    # /v1 and /health are handled by the mounted API and health route.
-    return await proxy_http(request)
+    return await streamlit_http_proxy(request)
 
 
 @app.websocket("/{path:path}")
 async def streamlit_websocket(websocket: WebSocket, path: str) -> None:
-    # Streamlit's browser client uses a websocket for live session updates.
-    # websockets is supplied by uvicorn[standard]/Streamlit dependencies.
     from websockets.asyncio.client import connect
 
     await websocket.accept()
