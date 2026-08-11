@@ -5,7 +5,7 @@ Supports:
 - Text to Video
 - Image to Video
 - Kling V3
-- Multiple API keys
+- Multiple Access Key / Secret Key pairs
 - Automatic key fallback
 - Automatic task polling
 - 16:9 / 9:16 / 1:1
@@ -14,6 +14,10 @@ Supports:
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import os
 import time
 from pathlib import Path
@@ -50,34 +54,81 @@ def _env(name: str, default: str = "") -> str:
     ).strip()
 
 
-def _load_api_keys() -> list[str]:
+def _load_credentials() -> list[tuple[str, str]]:
     """
-    Load Kling keys from all supported Render names.
+    Load Kling Access Key / Secret Key pairs.
 
-    Supported:
-    KLING_API_KEY
-    KLING_API_KEY_1
-    KLING_API_KEY_2
-    KLING_API_KEY_3
+    Supported Render names:
+    KLING_ACCESS_KEY + KLING_SECRET_KEY
+    KLING_ACCESS_KEY_1 + KLING_SECRET_KEY_1
+    KLING_ACCESS_KEY_2 + KLING_SECRET_KEY_2
+    KLING_ACCESS_KEY_3 + KLING_SECRET_KEY_3
     """
-
-    names = (
-        "KLING_API_KEY",
-        "KLING_API_KEY_1",
-        "KLING_API_KEY_2",
-        "KLING_API_KEY_3",
+    pairs = (
+        ("KLING_ACCESS_KEY", "KLING_SECRET_KEY"),
+        ("KLING_ACCESS_KEY_1", "KLING_SECRET_KEY_1"),
+        ("KLING_ACCESS_KEY_2", "KLING_SECRET_KEY_2"),
+        ("KLING_ACCESS_KEY_3", "KLING_SECRET_KEY_3"),
     )
 
-    keys: list[str] = []
+    credentials: list[tuple[str, str]] = []
 
-    for name in names:
+    for access_name, secret_name in pairs:
+        access_key = _env(access_name)
+        secret_key = _env(secret_name)
 
-        value = _env(name)
+        if access_key and secret_key:
+            pair = (access_key, secret_key)
+            if pair not in credentials:
+                credentials.append(pair)
 
-        if value and value not in keys:
-            keys.append(value)
+    return credentials
 
-    return keys
+
+def _jwt_token(access_key: str, secret_key: str) -> str:
+    """
+    Create the HS256 JWT required by Kling's API authentication.
+
+    The token is intentionally generated per request so long-running
+    Render processes do not reuse an expired token.
+    """
+    now = int(time.time())
+
+    header = {
+        "alg": "HS256",
+        "typ": "JWT",
+    }
+    payload = {
+        "iss": access_key,
+        "exp": now + 1800,
+        "nbf": now - 5,
+    }
+
+    def encode(value: Dict[str, Any]) -> str:
+        raw = json.dumps(
+            value,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    encoded_header = encode(header)
+    encoded_payload = encode(payload)
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
+
+    signature = hmac.new(
+        secret_key.encode("utf-8"),
+        signing_input,
+        hashlib.sha256,
+    ).digest()
+
+    encoded_signature = (
+        base64.urlsafe_b64encode(signature)
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+    return f"{encoded_header}.{encoded_payload}.{encoded_signature}"
 
 
 # ============================================================
@@ -91,35 +142,32 @@ class KlingVideoProvider:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        api_key_2: Optional[str] = None,
+        access_key: Optional[str] = None,
+        secret_key: Optional[str] = None,
+        access_key_2: Optional[str] = None,
+        secret_key_2: Optional[str] = None,
         model: Optional[str] = None,
         timeout: Optional[int] = None,
         poll_interval: Optional[float] = None,
     ) -> None:
 
-        keys = _load_api_keys()
+        credentials = _load_credentials()
 
-        manual_keys = [
-            api_key,
-            api_key_2,
+        manual_credentials = [
+            (access_key, secret_key),
+            (access_key_2, secret_key_2),
         ]
 
-        for key in manual_keys:
+        for manual_access, manual_secret in manual_credentials:
+            if manual_access and manual_secret:
+                pair = (
+                    str(manual_access).strip(),
+                    str(manual_secret).strip(),
+                )
+                if pair not in credentials:
+                    credentials.insert(0, pair)
 
-            if key and str(key).strip():
-
-                clean_key = str(
-                    key
-                ).strip()
-
-                if clean_key not in keys:
-                    keys.insert(
-                        0,
-                        clean_key,
-                    )
-
-        self.api_keys = keys
+        self.credentials = credentials
 
         self.model = (
             model
@@ -179,7 +227,7 @@ class KlingVideoProvider:
         """
 
         return bool(
-            self.api_keys
+            self.credentials
         )
 
     # ========================================================
@@ -194,8 +242,8 @@ class KlingVideoProvider:
             "provider": PROVIDER_NAME,
             "model": self.model,
             "configured": self.is_configured(),
-            "api_key_count": len(
-                self.api_keys
+            "credential_count": len(
+                self.credentials
             ),
             "api_base_url": API_BASE_URL,
             "supports_text_to_video": True,
@@ -209,20 +257,17 @@ class KlingVideoProvider:
 
     @staticmethod
     def _headers(
-        api_key: str,
+        access_key: str,
+        secret_key: str,
     ) -> Dict[str, str]:
-
         return {
             "Authorization": (
-                f"Bearer {api_key}"
+                f"Bearer {_jwt_token(access_key, secret_key)}"
             ),
-            "Content-Type": (
-                "application/json"
-            ),
-            "Accept": (
-                "application/json"
-            ),
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         }
+
 
     # ========================================================
     # HTTP
@@ -232,7 +277,8 @@ class KlingVideoProvider:
         self,
         method: str,
         url: str,
-        api_key: str,
+        access_key: str,
+        secret_key: str,
         **kwargs: Any,
     ) -> Dict[str, Any]:
 
@@ -240,7 +286,8 @@ class KlingVideoProvider:
             method=method,
             url=url,
             headers=self._headers(
-                api_key
+                access_key,
+                secret_key,
             ),
             timeout=60,
             **kwargs,
@@ -437,14 +484,15 @@ class KlingVideoProvider:
             Exception
         ] = None
 
-        for api_key in self.api_keys:
+        for access_key, secret_key in self.credentials:
 
             try:
 
                 return self._request(
                     "POST",
                     url,
-                    api_key,
+                    access_key,
+                    secret_key,
                     json=payload,
                 )
 
@@ -472,7 +520,7 @@ class KlingVideoProvider:
             Exception
         ] = None
 
-        for api_key in self.api_keys:
+        for access_key, secret_key in self.credentials:
 
             try:
 
@@ -482,7 +530,8 @@ class KlingVideoProvider:
                         f"{TEXT_TO_VIDEO_URL}"
                         f"/{task_id}"
                     ),
-                    api_key,
+                    access_key,
+                    secret_key,
                 )
 
             except Exception as error:
@@ -791,9 +840,9 @@ class KlingVideoProvider:
                 "provider": PROVIDER_NAME,
                 "model": self.model,
                 "error": (
-                    "Kling API key is not configured. "
-                    "Use KLING_API_KEY or "
-                    "KLING_API_KEY_1."
+                    "Kling credentials are not configured. "
+                    "Use KLING_ACCESS_KEY + KLING_SECRET_KEY "
+                    "or the numbered credential pairs."
                 ),
             }
 
