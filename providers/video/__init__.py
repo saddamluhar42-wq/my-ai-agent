@@ -1,4 +1,3 @@
-
 """
 Video generation provider package.
 
