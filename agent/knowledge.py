@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -5,6 +6,10 @@ from typing import Any, Dict, List, Optional
 
 from database.connection import execute
 
+
+# ============================================================
+# DATABASE SCHEMA
+# ============================================================
 
 KNOWLEDGE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_knowledge (
@@ -31,7 +36,12 @@ ON agent_knowledge(key);
 """
 
 
+# ============================================================
+# INITIALIZATION
+# ============================================================
+
 def initialize_knowledge_table():
+
     statements = [
         statement.strip()
         for statement in KNOWLEDGE_TABLE_SQL.split(";")
@@ -39,20 +49,34 @@ def initialize_knowledge_table():
     ]
 
     for statement in statements:
+
         execute(
             statement,
             fetch=None,
         )
 
 
+# ============================================================
+# TEXT HELPERS
+# ============================================================
+
 def _clean_text(
     value: Any,
     max_length: int = 2000,
 ) -> str:
-    text = str(value or "").strip()
+
+    text = str(
+        value or ""
+    ).strip()
 
     if len(text) > max_length:
-        text = text[:max_length].rstrip()
+
+        text = (
+            text[
+                :max_length
+            ]
+            .rstrip()
+        )
 
     return text
 
@@ -60,6 +84,7 @@ def _clean_text(
 def _normalize_key(
     key: str,
 ) -> str:
+
     key = _clean_text(
         key,
         max_length=200,
@@ -83,21 +108,48 @@ def _normalize_key(
 def _clamp_confidence(
     confidence: Any,
 ) -> float:
+
     try:
+
         value = float(
             confidence
         )
+
     except (
         TypeError,
         ValueError,
     ):
+
         value = 0.0
 
     return max(
         0.0,
-        min(value, 1.0),
+        min(
+            value,
+            1.0,
+        ),
     )
 
+
+def _stable_key(
+    text: str,
+    prefix: str,
+) -> str:
+
+    digest = hashlib.sha1(
+        text.encode(
+            "utf-8"
+        )
+    ).hexdigest()[:16]
+
+    return (
+        f"{prefix}_{digest}"
+    )
+
+
+# ============================================================
+# SAVE KNOWLEDGE
+# ============================================================
 
 def save_knowledge(
     user_id: Optional[int],
@@ -107,7 +159,10 @@ def save_knowledge(
     source: str = "conversation",
     confidence: float = 1.0,
 ):
-    key = _normalize_key(key)
+
+    key = _normalize_key(
+        key
+    )
 
     if not key:
         return None
@@ -130,11 +185,14 @@ def save_knowledge(
         value,
         (dict, list),
     ):
+
         value = json.dumps(
             value,
             ensure_ascii=False,
         )
+
     else:
+
         value = _clean_text(
             value,
             max_length=4000,
@@ -190,15 +248,26 @@ def save_knowledge(
         fetch="one",
     )
 
-    return row[0] if row else None
+    return (
+        row[0]
+        if row
+        else None
+    )
 
+
+# ============================================================
+# GET SINGLE KNOWLEDGE
+# ============================================================
 
 def get_knowledge(
     user_id: Optional[int],
     key: str,
     category: Optional[str] = None,
 ):
-    key = _normalize_key(key)
+
+    key = _normalize_key(
+        key
+    )
 
     if not key:
         return None
@@ -206,6 +275,7 @@ def get_knowledge(
     initialize_knowledge_table()
 
     if category:
+
         row = execute(
             """
             SELECT
@@ -230,7 +300,9 @@ def get_knowledge(
             ),
             fetch="one",
         )
+
     else:
+
         row = execute(
             """
             SELECT
@@ -258,14 +330,21 @@ def get_knowledge(
     if not row:
         return None
 
-    return _row_to_dict(row)
+    return _row_to_dict(
+        row
+    )
 
+
+# ============================================================
+# SEARCH RELEVANT KNOWLEDGE
+# ============================================================
 
 def search_knowledge(
     user_id: Optional[int],
     query: str,
     limit: int = 20,
 ):
+
     query = _clean_text(
         query,
         max_length=500,
@@ -276,7 +355,10 @@ def search_knowledge(
 
     safe_limit = max(
         1,
-        min(int(limit), 50),
+        min(
+            int(limit),
+            50,
+        ),
     )
 
     initialize_knowledge_table()
@@ -322,13 +404,21 @@ def search_knowledge(
     ]
 
 
+# ============================================================
+# GET ALL KNOWLEDGE
+# ============================================================
+
 def get_all_knowledge(
     user_id: Optional[int],
     limit: int = 100,
 ):
+
     safe_limit = max(
         1,
-        min(int(limit), 200),
+        min(
+            int(limit),
+            200,
+        ),
     )
 
     initialize_knowledge_table()
@@ -361,12 +451,77 @@ def get_all_knowledge(
     ]
 
 
+# ============================================================
+# GET PERMANENT USER PREFERENCES
+# ============================================================
+
+def get_user_preferences(
+    user_id: Optional[int],
+    limit: int = 50,
+):
+
+    safe_limit = max(
+        1,
+        min(
+            int(limit),
+            100,
+        ),
+    )
+
+    initialize_knowledge_table()
+
+    rows = execute(
+        f"""
+        SELECT
+            id,
+            category,
+            key,
+            value,
+            source,
+            confidence,
+            created_at,
+            updated_at
+        FROM agent_knowledge
+        WHERE user_id = %s
+          AND category IN (
+              'user_preference',
+              'language_preference',
+              'response_style',
+              'project_preference',
+              'important_instruction',
+              'user_correction'
+          )
+        ORDER BY
+            confidence DESC,
+            updated_at DESC,
+            id DESC
+        LIMIT {safe_limit};
+        """,
+        (
+            user_id,
+        ),
+        fetch="all",
+    )
+
+    return [
+        _row_to_dict(row)
+        for row in rows
+    ]
+
+
+# ============================================================
+# DELETE KNOWLEDGE
+# ============================================================
+
 def delete_knowledge(
     user_id: Optional[int],
     key: str,
     category: Optional[str] = None,
 ):
-    key = _normalize_key(key)
+
+    key = _normalize_key(
+        key
+    )
 
     if not key:
         return False
@@ -374,6 +529,7 @@ def delete_knowledge(
     initialize_knowledge_table()
 
     if category:
+
         execute(
             """
             DELETE FROM agent_knowledge
@@ -387,7 +543,9 @@ def delete_knowledge(
                 key,
             ),
         )
+
     else:
+
         execute(
             """
             DELETE FROM agent_knowledge
@@ -403,25 +561,109 @@ def delete_knowledge(
     return True
 
 
+# ============================================================
+# BUILD KNOWLEDGE CONTEXT
+# ============================================================
+
 def build_knowledge_context(
     user_id: Optional[int],
     query: str,
     limit: int = 20,
 ):
-    items = search_knowledge(
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Always load permanent user preferences.
+    # --------------------------------------------------------
+
+    preferences = get_user_preferences(
+        user_id=user_id,
+        limit=50,
+    )
+
+    # --------------------------------------------------------
+    # Also load query-specific knowledge.
+    # --------------------------------------------------------
+
+    relevant = search_knowledge(
         user_id=user_id,
         query=query,
         limit=limit,
     )
 
-    if not items:
-        return "No persistent knowledge found."
+    combined = []
+
+    seen_ids = set()
+
+    for item in (
+        preferences + relevant
+    ):
+
+        item_id = item.get(
+            "id"
+        )
+
+        if item_id in seen_ids:
+            continue
+
+        seen_ids.add(
+            item_id
+        )
+
+        combined.append(
+            item
+        )
+
+    if not combined:
+
+        return (
+            "No persistent knowledge "
+            "found."
+        )
+
+    # --------------------------------------------------------
+    # Sort important preferences first.
+    # --------------------------------------------------------
+
+    category_priority = {
+        "language_preference": 1,
+        "important_instruction": 2,
+        "user_preference": 3,
+        "response_style": 4,
+        "project_preference": 5,
+        "user_correction": 6,
+    }
+
+    combined.sort(
+        key=lambda item: (
+            category_priority.get(
+                item.get(
+                    "category",
+                    "general",
+                ),
+                99,
+            ),
+            -float(
+                item.get(
+                    "confidence",
+                    0.0,
+                )
+            ),
+        )
+    )
 
     lines = [
-        "PERSISTENT AGENT KNOWLEDGE:"
+        "PERSISTENT USER KNOWLEDGE:",
+        "",
+        (
+            "IMPORTANT: Apply relevant "
+            "user preferences and instructions "
+            "to the current response."
+        ),
     ]
 
-    for item in items:
+    for item in combined:
+
         lines.append(
             (
                 f"- [{item['category']}] "
@@ -432,7 +674,9 @@ def build_knowledge_context(
             )
         )
 
-    return "\n".join(lines)
+    return "\n".join(
+        lines
+    )
 
 
 # ============================================================
@@ -443,6 +687,7 @@ _EXPLICIT_MEMORY_PATTERNS = (
     "remember this",
     "remember that",
     "remember it",
+    "remember",
     "save this",
     "save that",
     "save it",
@@ -452,12 +697,14 @@ _EXPLICIT_MEMORY_PATTERNS = (
     "do not forget this",
     "yaad rakhna",
     "ye yaad rakhna",
+    "yeh yaad rakhna",
     "isko yaad rakhna",
     "ise yaad rakhna",
     "save karna",
     "memory me save",
     "memory mein save",
 )
+
 
 _CORRECTION_PATTERNS = (
     "actually",
@@ -474,6 +721,7 @@ _CORRECTION_PATTERNS = (
     "सही",
 )
 
+
 _PREFERENCE_PATTERNS = (
     "i prefer",
     "i like",
@@ -488,14 +736,52 @@ _PREFERENCE_PATTERNS = (
 )
 
 
+# ============================================================
+# LANGUAGE PREFERENCE DETECTION
+# ============================================================
+
+_HINDI_LANGUAGE_PATTERNS = (
+    "hindi me jawab",
+    "hindi mein jawab",
+    "hindi me answer",
+    "hindi mein answer",
+    "hindi me reply",
+    "hindi mein reply",
+    "jawab hindi me",
+    "jawab hindi mein",
+    "answer hindi me",
+    "answer hindi mein",
+    "reply hindi me",
+    "reply hindi mein",
+    "हिंदी में जवाब",
+    "हिंदी में उत्तर",
+    "हिंदी में बताना",
+    "हिंदी में बताओ",
+)
+
+
+_ENGLISH_LANGUAGE_PATTERNS = (
+    "answer in english",
+    "reply in english",
+    "respond in english",
+    "english me jawab",
+    "english mein jawab",
+    "english me answer",
+    "english mein answer",
+    "अंग्रेजी में जवाब",
+    "अंग्रेज़ी में जवाब",
+)
+
+
 def _contains_pattern(
     text: str,
     patterns,
 ) -> bool:
+
     text = text.lower()
 
     return any(
-        pattern in text
+        pattern.lower() in text
         for pattern in patterns
     )
 
@@ -504,14 +790,17 @@ def _extract_after_marker(
     query: str,
     markers,
 ) -> str:
+
     query_lower = query.lower()
 
     for marker in markers:
+
         index = query_lower.find(
-            marker
+            marker.lower()
         )
 
         if index >= 0:
+
             value = query[
                 index + len(marker):
             ].strip(
@@ -524,6 +813,47 @@ def _extract_after_marker(
     return ""
 
 
+# ============================================================
+# LANGUAGE CANDIDATE
+# ============================================================
+
+def _language_candidate(
+    query: str,
+) -> Optional[Dict[str, Any]]:
+
+    if _contains_pattern(
+        query,
+        _HINDI_LANGUAGE_PATTERNS,
+    ):
+
+        return {
+            "category": "language_preference",
+            "key": "response_language",
+            "value": "Hindi",
+            "source": "explicit_user_request",
+            "confidence": 1.0,
+        }
+
+    if _contains_pattern(
+        query,
+        _ENGLISH_LANGUAGE_PATTERNS,
+    ):
+
+        return {
+            "category": "language_preference",
+            "key": "response_language",
+            "value": "English",
+            "source": "explicit_user_request",
+            "confidence": 1.0,
+        }
+
+    return None
+
+
+# ============================================================
+# EXPLICIT MEMORY CANDIDATE
+# ============================================================
+
 def _explicit_memory_candidate(
     query: str,
 ) -> Optional[Dict[str, Any]]:
@@ -532,6 +862,17 @@ def _explicit_memory_candidate(
         query,
         _EXPLICIT_MEMORY_PATTERNS,
     ):
+        return None
+
+    # --------------------------------------------------------
+    # If this is specifically a language preference,
+    # language_candidate handles it with a stable key.
+    # --------------------------------------------------------
+
+    if _language_candidate(
+        query
+    ):
+
         return None
 
     value = _extract_after_marker(
@@ -548,13 +889,20 @@ def _explicit_memory_candidate(
     )
 
     return {
-        "category": "user_preference",
-        "key": "explicit_memory",
+        "category": "important_instruction",
+        "key": _stable_key(
+            value,
+            "instruction",
+        ),
         "value": value,
         "source": "explicit_user_request",
         "confidence": 0.98,
     }
 
+
+# ============================================================
+# PREFERENCE CANDIDATE
+# ============================================================
 
 def _preference_candidate(
     query: str,
@@ -573,12 +921,19 @@ def _preference_candidate(
 
     return {
         "category": "user_preference",
-        "key": "preference",
+        "key": _stable_key(
+            value,
+            "preference",
+        ),
         "value": value,
         "source": "conversation",
         "confidence": 0.90,
     }
 
+
+# ============================================================
+# CORRECTION CANDIDATE
+# ============================================================
 
 def _correction_candidate(
     query: str,
@@ -604,6 +959,10 @@ def _correction_candidate(
     }
 
 
+# ============================================================
+# LEARNING EXTRACTION
+# ============================================================
+
 def extract_learning_candidates(
     query: str,
     answer: str,
@@ -611,11 +970,11 @@ def extract_learning_candidates(
     """
     Extract conservative learning candidates.
 
-    Explicit memory requests and direct user
-    preferences/corrections receive high confidence.
+    Permanent preferences are only created when
+    the user's message clearly indicates a preference,
+    instruction, correction, or explicit memory request.
 
-    Ordinary questions are NOT automatically
-    converted into permanent user knowledge.
+    Normal questions are NOT permanently memorized.
     """
 
     query = _clean_text(
@@ -629,33 +988,69 @@ def extract_learning_candidates(
     )
 
     if not query or not answer:
+
         return []
 
     candidates = []
 
-    explicit = _explicit_memory_candidate(
+    # --------------------------------------------------------
+    # Highest priority: language preference
+    # --------------------------------------------------------
+
+    language = _language_candidate(
         query
     )
 
+    if language:
+
+        candidates.append(
+            language
+        )
+
+    # --------------------------------------------------------
+    # Explicit memory
+    # --------------------------------------------------------
+
+    explicit = (
+        _explicit_memory_candidate(
+            query
+        )
+    )
+
     if explicit:
+
         candidates.append(
             explicit
         )
 
-    correction = _correction_candidate(
-        query
+    # --------------------------------------------------------
+    # User corrections
+    # --------------------------------------------------------
+
+    correction = (
+        _correction_candidate(
+            query
+        )
     )
 
     if correction:
+
         candidates.append(
             correction
         )
 
-    preference = _preference_candidate(
-        query
+    # --------------------------------------------------------
+    # General preferences
+    # --------------------------------------------------------
+
+    preference = (
+        _preference_candidate(
+            query
+        )
     )
 
     if preference:
+
         candidates.append(
             preference
         )
@@ -665,28 +1060,50 @@ def extract_learning_candidates(
     )
 
 
+# ============================================================
+# DEDUPLICATION
+# ============================================================
+
 def _deduplicate_candidates(
     candidates: List[Dict[str, Any]],
 ):
+
     unique = []
+
     seen = set()
 
     for candidate in candidates:
 
         key = (
-            candidate.get("category"),
-            candidate.get("key"),
-            candidate.get("value"),
+            candidate.get(
+                "category"
+            ),
+            candidate.get(
+                "key"
+            ),
+            candidate.get(
+                "value"
+            ),
         )
 
         if key in seen:
+
             continue
 
-        seen.add(key)
-        unique.append(candidate)
+        seen.add(
+            key
+        )
+
+        unique.append(
+            candidate
+        )
 
     return unique
 
+
+# ============================================================
+# CANDIDATE VALIDATION
+# ============================================================
 
 def evaluate_learning_candidate(
     candidate: Dict[str, Any],
@@ -694,15 +1111,20 @@ def evaluate_learning_candidate(
 ) -> bool:
 
     if not candidate:
+
         return False
 
     key = _clean_text(
-        candidate.get("key"),
+        candidate.get(
+            "key"
+        ),
         max_length=100,
     )
 
     value = _clean_text(
-        candidate.get("value"),
+        candidate.get(
+            "value"
+        ),
         max_length=4000,
     )
 
@@ -716,15 +1138,16 @@ def evaluate_learning_candidate(
     return bool(
         key
         and value
-        and confidence >= minimum_confidence
+        and confidence
+        >= minimum_confidence
     )
 
 
+# ============================================================
+# LEARNING HEALTH
+# ============================================================
+
 def learning_health():
-    """
-    Return a simple health report for the
-    persistent learning layer.
-    """
 
     initialize_knowledge_table()
 
@@ -737,7 +1160,13 @@ def learning_health():
                 WHERE category = 'user_preference'
             ),
             COUNT(*) FILTER (
+                WHERE category = 'language_preference'
+            ),
+            COUNT(*) FILTER (
                 WHERE category = 'user_correction'
+            ),
+            COUNT(*) FILTER (
+                WHERE category = 'important_instruction'
             ),
             MAX(updated_at)
         FROM agent_knowledge;
@@ -746,21 +1175,25 @@ def learning_health():
     )
 
     if not row:
+
         return {
             "records": 0,
             "users": 0,
             "preferences": 0,
+            "language_preferences": 0,
             "corrections": 0,
+            "instructions": 0,
             "last_update": None,
             "status": "ready",
         }
 
-    last_update = row[4]
+    last_update = row[6]
 
     if isinstance(
         last_update,
         datetime,
     ):
+
         last_update = (
             last_update.astimezone(
                 timezone.utc
@@ -768,24 +1201,42 @@ def learning_health():
         )
 
     return {
-        "records": int(row[0] or 0),
-        "users": int(row[1] or 0),
-        "preferences": int(row[2] or 0),
-        "corrections": int(row[3] or 0),
+        "records": int(
+            row[0] or 0
+        ),
+        "users": int(
+            row[1] or 0
+        ),
+        "preferences": int(
+            row[2] or 0
+        ),
+        "language_preferences": int(
+            row[3] or 0
+        ),
+        "corrections": int(
+            row[4] or 0
+        ),
+        "instructions": int(
+            row[5] or 0
+        ),
         "last_update": last_update,
         "status": "ready",
     }
 
 
 def knowledge_health():
-    """
-    Backward-compatible alias.
-    """
 
     return learning_health()
 
 
-def _row_to_dict(row):
+# ============================================================
+# ROW CONVERSION
+# ============================================================
+
+def _row_to_dict(
+    row,
+):
+
     return {
         "id": row[0],
         "category": row[1],
