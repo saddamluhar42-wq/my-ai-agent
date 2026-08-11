@@ -175,6 +175,49 @@ VIDEO_PROVIDER_ALIASES = {
 }
 
 
+META_REPLY_PREFIXES = (
+    r"^(user safety|powered by)\s*:",
+)
+
+
+def clean_assistant_text(text):
+
+    value = str(
+        text or ""
+    ).strip()
+
+    if not value:
+        return ""
+
+    cleaned_lines = []
+
+    for line in value.splitlines():
+
+        stripped = line.strip()
+
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+
+        if any(
+            re.match(
+                pattern,
+                stripped,
+                flags=re.IGNORECASE,
+            )
+            for pattern in META_REPLY_PREFIXES
+        ):
+            continue
+
+        cleaned_lines.append(
+            line
+        )
+
+    return "\n".join(
+        cleaned_lines
+    ).strip()
+
+
 # ============================================================
 # CHAT STATE
 # ============================================================
@@ -192,7 +235,7 @@ def initialize_chat_state():
         "preferred_provider": "Auto",
         "pending_image_prompt": None,
         "pending_video_prompt": None,
-        "show_provider_info": True,
+        "show_provider_info": False,
         "enable_chat_memory": True,
         "confirm_image_generation": True,
         "confirm_video_generation": True,
@@ -420,6 +463,11 @@ def render_messages():
 
             if content:
 
+                if role == "assistant":
+                    content = clean_assistant_text(
+                        content
+                    )
+
                 st.markdown(
                     content
                 )
@@ -428,7 +476,7 @@ def render_messages():
                 role == "assistant"
                 and st.session_state.get(
                     "show_provider_info",
-                    True,
+                    False,
                 )
             ):
 
@@ -661,7 +709,6 @@ def render_composer():
 # ============================================================
 # FILE MESSAGE
 # ============================================================
-
 def build_file_message(files):
 
     names = [
@@ -689,7 +736,6 @@ def build_file_message(files):
 # ============================================================
 # FILE PROCESSING
 # ============================================================
-
 def process_uploaded_files(
     uploaded_files,
 ):
@@ -749,7 +795,6 @@ def process_uploaded_files(
 # ============================================================
 # IMAGE REQUEST DETECTION
 # ============================================================
-
 def is_image_request(prompt):
 
     text = prompt.lower().strip()
@@ -763,7 +808,6 @@ def is_image_request(prompt):
 # ============================================================
 # VIDEO REQUEST DETECTION
 # ============================================================
-
 def is_video_request(prompt):
 
     text = prompt.lower().strip()
@@ -777,7 +821,6 @@ def is_video_request(prompt):
 # ============================================================
 # CONFIRMATION
 # ============================================================
-
 def is_yes_confirmation(prompt):
 
     return (
@@ -797,7 +840,6 @@ def is_no_confirmation(prompt):
 # ============================================================
 # IMAGE CONFIRMATION REQUEST
 # ============================================================
-
 def request_image_confirmation(
     image_prompt,
 ):
@@ -826,7 +868,6 @@ def request_image_confirmation(
 # ============================================================
 # VIDEO CONFIRMATION REQUEST
 # ============================================================
-
 def request_video_confirmation(
     video_prompt,
 ):
@@ -873,7 +914,6 @@ def request_video_confirmation(
 # ============================================================
 # PENDING IMAGE CONFIRMATION
 # ============================================================
-
 def handle_pending_image_confirmation(
     prompt,
 ):
@@ -967,7 +1007,6 @@ def handle_pending_image_confirmation(
 # ============================================================
 # PENDING VIDEO CONFIRMATION
 # ============================================================
-
 def handle_pending_video_confirmation(
     prompt,
 ):
@@ -1061,7 +1100,6 @@ def handle_pending_video_confirmation(
 # ============================================================
 # VIDEO PROVIDER
 # ============================================================
-
 def resolve_video_provider():
 
     preferred_provider = (
@@ -1093,7 +1131,6 @@ def resolve_video_provider():
 # ============================================================
 # VIDEO OUTPUT PATH
 # ============================================================
-
 def create_video_output_path():
 
     VIDEO_OUTPUT_DIR.mkdir(
@@ -1115,7 +1152,6 @@ def create_video_output_path():
 # ============================================================
 # CONFIRMED VIDEO GENERATION
 # ============================================================
-
 def generate_confirmed_video(
     video_prompt,
 ):
@@ -1276,7 +1312,6 @@ def generate_confirmed_video(
 # ============================================================
 # CONFIRMED IMAGE GENERATION
 # ============================================================
-
 def generate_confirmed_image(
     image_prompt,
 ):
@@ -1374,7 +1409,6 @@ def generate_confirmed_image(
 # ============================================================
 # USER MESSAGE
 # ============================================================
-
 def handle_user_message(
     prompt,
 ):
@@ -1559,14 +1593,16 @@ def handle_user_message(
 
             error_message = result.metadata.get(
                 "error",
-                "Agent execution failed.",
+                "Agent execution failed."
             )
 
             raise AgentError(
                 error_message
             )
 
-        answer = result.answer
+        answer = clean_assistant_text(
+            result.answer
+        )
 
         provider = result.provider
 
@@ -1632,7 +1668,6 @@ def handle_user_message(
 # ============================================================
 # DATABASE CONTEXT
 # ============================================================
-
 def ensure_database_context():
 
     if st.session_state.get(
