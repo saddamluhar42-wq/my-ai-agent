@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from agent.evolution import evolve_from_interaction
 from agent.executor import ExecutionResult
 from agent.knowledge import build_knowledge_context
+from agent.location_context import format_location_context, resolve_location
 from agent.planner import create_plan
 from ai.agent import AgentError, generate
 from search.tavily import TavilyError, format_results, is_configured as is_tavily_configured, search as tavily_search
@@ -16,7 +17,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.4.0"
+        self.version = "1.5.0"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -49,13 +50,24 @@ class AgentCore:
         except Exception:
             knowledge_context = ""
 
-        web_context = self._build_web_context(query, plan)
+        # Resolve an explicit location from the current message, or inherit the
+        # most recently mentioned location from conversation context.
+        location = resolve_location(query, recent_messages)
+        location_context = format_location_context(location)
+
+        web_query = query
+        if location:
+            canonical = location.get("display_name", "")
+            # Keep the user's wording but make the location explicit to live search.
+            web_query = f"{query}\nLocation context: {canonical}"
+
+        web_context = self._build_web_context(web_query, plan, location=location)
         current_time_utc = datetime.now(timezone.utc)
         current_time_local = datetime.now().astimezone()
         prompt = self._build_prompt(
             query, plan, memory_context, knowledge_context, file_context,
             web_context, recent_messages, preferred_provider,
-            current_time_utc, current_time_local,
+            current_time_utc, current_time_local, location_context,
         )
 
         try:
@@ -90,13 +102,16 @@ class AgentCore:
             "model": model,
             "knowledge_used": bool(knowledge_context),
             "web_search_used": bool(web_context and not web_context.startswith("Web search is not configured")),
+            "location_context_used": bool(location_context),
+            "location": location,
             "evolution": evolution_result,
         }
         return ExecutionResult(answer=answer, success=True, provider=provider, skill=plan.primary_skill, metadata=metadata)
 
     def _build_prompt(self, query, plan, memory_context, knowledge_context, file_context,
                       web_context, recent_messages, preferred_provider=None,
-                      current_time_utc=None, current_time_local=None):
+                      current_time_utc=None, current_time_local=None,
+                      location_context=""):
         skill_lines = [f"{s.order}. {s.skill_name}: {s.purpose}" for s in plan.steps]
         sections = [
             "You are My AI Agent.",
@@ -111,6 +126,13 @@ class AgentCore:
             "Never switch language because a web source uses another language.",
             "Short follow-ups inherit the language of the immediately preceding conversation.",
             "",
+            "LOCATION POLICY:",
+            "When an active location is supplied, treat it as conversation context.",
+            "If the user says only a place name such as Mumbai, recognize and remember that location for follow-up questions.",
+            "Resolve words such as 'waha', 'udhar', 'there', 'yaha', and 'here' using the active location when appropriate.",
+            "For current location-dependent questions, use the supplied live web evidence for that location.",
+            "Do not invent weather, traffic, news, events, distances, or other live location data.",
+            "",
             "ACTION POLICY:",
             "A Telegram delivery request means actually deliver the referenced previous answer/result; it is not a request for Telegram setup instructions.",
             "Do not invent successful external actions. The application executes external actions deterministically.",
@@ -118,6 +140,8 @@ class AgentCore:
             "SELECTED AGENT PLAN:", "\n".join(skill_lines),
             "", "USER QUESTION:", query,
         ]
+        if location_context:
+            sections.extend(["", "ACTIVE LOCATION CONTEXT:", location_context])
         if knowledge_context:
             sections.extend(["", "PERSISTENT KNOWLEDGE:", knowledge_context])
         if memory_context:
@@ -165,8 +189,8 @@ class AgentCore:
             cleaned.append(line)
         return "\n".join(cleaned).strip()
 
-    def _build_web_context(self, query: str, plan) -> str:
-        if not is_tavily_configured() or not self._should_search_web(query, plan):
+    def _build_web_context(self, query: str, plan, location=None) -> str:
+        if not is_tavily_configured() or not self._should_search_web(query, plan, location=location):
             return "Web search is not configured." if not is_tavily_configured() else ""
         try:
             result = tavily_search(query, search_depth="advanced", max_results=5, include_answer=True)
@@ -177,12 +201,16 @@ class AgentCore:
             return f"Web search failed unexpectedly: {error}"
 
     @staticmethod
-    def _should_search_web(query: str, plan) -> bool:
+    def _should_search_web(query: str, plan, location=None) -> bool:
         text = str(query or "").strip()
         normalized = re.sub(r"[^a-z0-9\u0900-\u097f]+", " ", text.lower()).strip()
         if normalized in {"hi", "hello", "hey", "ok", "okay", "ha", "haa", "yes", "no", "done", "thanks", "bye"}:
             return False
-        return len(normalized.split()) >= 2 or "?" in text or len(text) >= 12
+        # A place-only message establishes context; the next substantive query
+        # will use that context for live web research.
+        if location and normalized == str(location.get("query", "")).lower().strip():
+            return False
+        return len(normalized.split()) >= 2 or "?" in text or len(text) >= 12 or bool(location)
 
 
 _core = AgentCore()
