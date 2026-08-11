@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import re
 from typing import Any, Dict, Optional
 
 from agent.evolution import evolve_from_interaction
@@ -199,6 +200,10 @@ class AgentCore:
             )
             or ""
         ).strip()
+
+        answer = self._sanitize_answer(
+            answer
+        )
 
         if not answer:
 
@@ -549,6 +554,45 @@ class AgentCore:
         return "\n".join(
             sections
         )
+
+    @staticmethod
+    def _sanitize_answer(
+        answer: str,
+    ) -> str:
+
+        text = str(
+            answer or ""
+        ).strip()
+
+        if not text:
+            return ""
+
+        cleaned_lines = []
+
+        for line in text.splitlines():
+
+            stripped = line.strip()
+
+            if not stripped:
+                cleaned_lines.append("")
+                continue
+
+            if re.match(
+                r"^(user safety|powered by)\s*:",
+                stripped,
+                flags=re.IGNORECASE,
+            ):
+                continue
+
+            cleaned_lines.append(
+                line
+            )
+
+        cleaned = "\n".join(
+            cleaned_lines
+        ).strip()
+
+        return cleaned
 
     def _build_web_context(
         self,
