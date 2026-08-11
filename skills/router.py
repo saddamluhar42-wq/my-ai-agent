@@ -5,7 +5,9 @@ from skills.registry import (
     SkillDefinition,
     get_enabled_skills,
     get_skill,
+    registry,
 )
+from skills.professional_fields import register_professional_skills
 
 
 @dataclass
@@ -300,6 +302,9 @@ class SkillRouter:
             lines
         )
 
+
+# Register the comprehensive professional catalog before routing begins.
+register_professional_skills(registry)
 
 router = SkillRouter()
 
