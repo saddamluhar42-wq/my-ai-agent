@@ -1,38 +1,162 @@
 from dataclasses import dataclass
 from typing import List
 
-from skills.registry import Skill, registry
+from skills.registry import (
+    SkillDefinition,
+    get_enabled_skills,
+    get_skill,
+)
 
 
 @dataclass
 class SkillRoute:
-    primary_skill: Skill
-    supporting_skills: List[Skill]
+    primary_skill: SkillDefinition
+    supporting_skills: List[SkillDefinition]
 
 
 class SkillRouter:
     """
     Automatically selects the most appropriate skills
     for an incoming user request.
+
+    Uses the central Skill Registry and lightweight
+    keyword matching.
     """
 
-    def __init__(self, skill_registry=None):
-        self.registry = skill_registry or registry
+    def __init__(
+        self,
+        skill_registry=None,
+    ):
+        self.registry = skill_registry
+
+    def _get_skills(self):
+        if self.registry is not None:
+
+            if hasattr(
+                self.registry,
+                "enabled",
+            ):
+                return self.registry.enabled()
+
+            if hasattr(
+                self.registry,
+                "all",
+            ):
+                return [
+                    skill
+                    for skill in self.registry.all()
+                    if skill.enabled
+                ]
+
+        return get_enabled_skills()
+
+    def _score_skill(
+        self,
+        query: str,
+        skill: SkillDefinition,
+    ) -> int:
+
+        query_lower = query.lower().strip()
+
+        if not query_lower:
+            return 0
+
+        score = 0
+
+        # Exact skill-name match
+        if skill.name.lower() in query_lower:
+            score += 100
+
+        # Keyword matching
+        for keyword in skill.keywords:
+
+            keyword = str(
+                keyword or ""
+            ).lower().strip()
+
+            if not keyword:
+                continue
+
+            if keyword in query_lower:
+                score += 10
+
+        # Small priority contribution
+        score += max(
+            0,
+            min(
+                int(skill.priority),
+                100,
+            ),
+        ) // 10
+
+        return score
+
+    def _rank_skills(
+        self,
+        query: str,
+    ) -> List[SkillDefinition]:
+
+        skills = self._get_skills()
+
+        scored = []
+
+        for skill in skills:
+
+            score = self._score_skill(
+                query,
+                skill,
+            )
+
+            scored.append(
+                (
+                    score,
+                    skill.priority,
+                    skill.name,
+                    skill,
+                )
+            )
+
+        scored.sort(
+            key=lambda item: (
+                item[0],
+                item[1],
+                item[2],
+            ),
+            reverse=True,
+        )
+
+        return [
+            item[3]
+            for item in scored
+            if item[0] > 0
+        ]
 
     def route(
         self,
         query: str,
         max_supporting_skills: int = 3,
     ) -> SkillRoute:
-        matches = self.registry.find_matches(
-            query,
-            limit=max_supporting_skills + 1,
+
+        query = str(
+            query or ""
+        ).strip()
+
+        general = (
+            self._get_general_skill()
+        )
+
+        if not query:
+
+            return SkillRoute(
+                primary_skill=general,
+                supporting_skills=[],
+            )
+
+        matches = self._rank_skills(
+            query
         )
 
         if not matches:
-            general = self.registry.get(
-                "general_knowledge"
-            )
 
             return SkillRoute(
                 primary_skill=general,
@@ -47,42 +171,93 @@ class SkillRouter:
             if skill.name != primary.name
         ]
 
+        safe_limit = max(
+            0,
+            min(
+                int(max_supporting_skills),
+                10,
+            ),
+        )
+
         return SkillRoute(
             primary_skill=primary,
             supporting_skills=supporting[
-                :max_supporting_skills
+                :safe_limit
             ],
+        )
+
+    def _get_general_skill(
+        self,
+    ) -> SkillDefinition:
+
+        general = get_skill(
+            "general_knowledge"
+        )
+
+        if general is not None:
+            return general
+
+        skills = self._get_skills()
+
+        if skills:
+            return skills[0]
+
+        # Defensive fallback.
+        return SkillDefinition(
+            name="general_knowledge",
+            description=(
+                "General reasoning and "
+                "question answering."
+            ),
+            keywords=[],
+            priority=100,
+            enabled=True,
         )
 
     def explain_route(
         self,
         query: str,
     ) -> str:
-        route = self.route(query)
+
+        route = self.route(
+            query
+        )
 
         lines = [
             "SKILL ROUTING",
-            f"Primary: {route.primary_skill.name}",
+            f"Primary: "
+            f"{route.primary_skill.name}",
         ]
 
         if route.supporting_skills:
-            lines.append("Supporting:")
 
-            for skill in route.supporting_skills:
+            lines.append(
+                "Supporting:"
+            )
+
+            for skill in (
+                route.supporting_skills
+            ):
+
                 lines.append(
                     f"- {skill.name}"
                 )
 
-        return "\n".join(lines)
+        return "\n".join(
+            lines
+        )
 
     def build_agent_instruction(
         self,
         query: str,
     ) -> str:
-        route = self.route(query)
+
+        route = self.route(
+            query
+        )
 
         lines = [
-            "SELECTED SKILL:",
+            "SELECTED PRIMARY SKILL:",
             route.primary_skill.name,
             "",
             "SKILL PURPOSE:",
@@ -90,6 +265,7 @@ class SkillRouter:
         ]
 
         if route.supporting_skills:
+
             lines.extend(
                 [
                     "",
@@ -97,7 +273,10 @@ class SkillRouter:
                 ]
             )
 
-            for skill in route.supporting_skills:
+            for skill in (
+                route.supporting_skills
+            ):
+
                 lines.append(
                     f"- {skill.name}: "
                     f"{skill.description}"
@@ -109,13 +288,17 @@ class SkillRouter:
                 "USER REQUEST:",
                 query.strip(),
                 "",
-                "Use the selected skill as the "
-                "primary capability. Use supporting "
-                "skills only when useful.",
+                "Use the primary skill first.",
+                "Use supporting skills when they "
+                "actually improve the result.",
+                "Do not pretend a skill was used "
+                "when it was not actually available.",
             ]
         )
 
-        return "\n".join(lines)
+        return "\n".join(
+            lines
+        )
 
 
 router = SkillRouter()
@@ -124,12 +307,16 @@ router = SkillRouter()
 def route_query(
     query: str,
 ) -> SkillRoute:
-    return router.route(query)
+
+    return router.route(
+        query
+    )
 
 
 def get_skill_instruction(
     query: str,
 ) -> str:
+
     return router.build_agent_instruction(
         query
     )
