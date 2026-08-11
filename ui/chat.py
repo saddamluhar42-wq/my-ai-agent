@@ -12,7 +12,10 @@ from database.memory import (
     save_assistant_message,
     save_user_message,
 )
-from database.models import get_or_create_conversation
+from database.models import (
+    get_or_create_conversation,
+    get_or_create_user,
+)
 from files.processor import (
     build_file_context,
     process_multiple_files,
@@ -889,6 +892,12 @@ def handle_user_message(
             ]
         )
 
+        user_id = (
+            st.session_state[
+                "user_id"
+            ]
+        )
+
         save_user_message(
             conversation_id,
             prompt,
@@ -939,6 +948,7 @@ def handle_user_message(
         # ----------------------------------------------------
 
         context = {
+            "user_id": user_id,
             "memory_context": memory_context,
             "file_context": file_context,
             "recent_messages": recent_messages,
@@ -1051,10 +1061,6 @@ def ensure_database_context():
     if st.session_state.get(
         "user_id"
     ) is None:
-
-        from database.models import (
-            get_or_create_user,
-        )
 
         user_id = get_or_create_user(
             external_id="streamlit:web-user",
