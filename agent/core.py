@@ -17,7 +17,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.5.0"
+        self.version = "1.5.1"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -28,8 +28,6 @@ class AgentCore:
         context = context or {}
         recent_messages = context.get("recent_messages", [])
 
-        # External actions are deterministic. Never ask the AI model to guess
-        # whether Telegram delivery happened.
         if is_delivery_request(query):
             sent, message = deliver_previous_answer(recent_messages)
             return ExecutionResult(
@@ -50,15 +48,12 @@ class AgentCore:
         except Exception:
             knowledge_context = ""
 
-        # Resolve an explicit location from the current message, or inherit the
-        # most recently mentioned location from conversation context.
         location = resolve_location(query, recent_messages)
         location_context = format_location_context(location)
 
         web_query = query
         if location:
             canonical = location.get("display_name", "")
-            # Keep the user's wording but make the location explicit to live search.
             web_query = f"{query}\nLocation context: {canonical}"
 
         web_context = self._build_web_context(web_query, plan, location=location)
@@ -71,7 +66,11 @@ class AgentCore:
         )
 
         try:
-            result = generate(prompt=prompt)
+            # IMPORTANT: pass the provider selected in the Streamlit UI.
+            # Previously this value was added to the prompt but never passed
+            # to the AI routing layer, so Auto/Gemini/etc. selection had no
+            # effect and a slow/failed first provider could delay the reply.
+            result = generate(prompt=prompt, preferred_provider=preferred_provider)
         except AgentError:
             raise
         except Exception as error:
@@ -206,8 +205,6 @@ class AgentCore:
         normalized = re.sub(r"[^a-z0-9\u0900-\u097f]+", " ", text.lower()).strip()
         if normalized in {"hi", "hello", "hey", "ok", "okay", "ha", "haa", "yes", "no", "done", "thanks", "bye"}:
             return False
-        # A place-only message establishes context; the next substantive query
-        # will use that context for live web research.
         if location and normalized == str(location.get("query", "")).lower().strip():
             return False
         return len(normalized.split()) >= 2 or "?" in text or len(text) >= 12 or bool(location)
