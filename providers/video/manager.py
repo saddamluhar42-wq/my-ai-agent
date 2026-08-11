@@ -23,9 +23,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 @dataclass
 class VideoGenerationResult:
-    """
-    Standard result returned by the video manager.
-    """
+    """Standard result returned by the video manager."""
 
     success: bool
 
@@ -34,6 +32,8 @@ class VideoGenerationResult:
     model: str = ""
 
     output_path: Optional[str] = None
+
+    video_url: Optional[str] = None
 
     task_id: Optional[str] = None
 
@@ -48,15 +48,14 @@ class VideoGenerationResult:
     )
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert result to a normal dictionary.
-        """
+        """Convert result to a normal dictionary."""
 
         return {
             "success": self.success,
             "provider": self.provider,
             "model": self.model,
             "output_path": self.output_path,
+            "video_url": self.video_url,
             "task_id": self.task_id,
             "error": self.error,
             "attempts": self.attempts,
@@ -71,9 +70,7 @@ class VideoGenerationResult:
 
 @dataclass
 class VideoProviderEntry:
-    """
-    Internal provider registration record.
-    """
+    """Internal provider registration record."""
 
     name: str
 
@@ -98,12 +95,7 @@ class VideoProviderEntry:
 
 
 class VideoGenerationManager:
-    """
-    Central manager for AI video generation.
-
-    Providers are tried according to priority unless
-    a specific provider is requested.
-    """
+    """Central manager for AI video generation."""
 
     def __init__(self) -> None:
 
@@ -132,9 +124,6 @@ class VideoGenerationManager:
         priority: int = 50,
         enabled: bool = True,
     ) -> None:
-        """
-        Register a video provider.
-        """
 
         provider_name = str(
             name or ""
@@ -152,18 +141,24 @@ class VideoGenerationManager:
 
         if generator is None:
 
-            possible_generator = getattr(
-                provider,
+            for method_name in (
+                "generate_video",
                 "generate",
-                None,
-            )
-
-            if callable(
-                possible_generator
             ):
-                generator = (
-                    possible_generator
+
+                possible_generator = getattr(
+                    provider,
+                    method_name,
+                    None,
                 )
+
+                if callable(
+                    possible_generator
+                ):
+                    generator = (
+                        possible_generator
+                    )
+                    break
 
         if configured_checker is None:
 
@@ -200,12 +195,6 @@ class VideoGenerationManager:
     def _register_builtin_providers(
         self,
     ) -> None:
-        """
-        Load built-in video providers.
-
-        A provider that is unavailable because its module
-        or dependency is missing will not crash the manager.
-        """
 
         # ----------------------------------------------------
         # GOOGLE
@@ -301,22 +290,16 @@ class VideoGenerationManager:
         try:
 
             from providers.video.kling import (
-                generate_kling_video,
-                is_kling_video_configured,
-                kling_video_provider,
+                generate_video,
+                kling,
+                is_configured,
             )
 
             self.register_provider(
                 name="kling",
-                provider=(
-                    kling_video_provider
-                ),
-                generator=(
-                    generate_kling_video
-                ),
-                configured_checker=(
-                    is_kling_video_configured
-                ),
+                provider=kling,
+                generator=generate_video,
+                configured_checker=is_configured,
                 priority=70,
             )
 
@@ -359,12 +342,7 @@ class VideoGenerationManager:
     def get_provider(
         self,
         name: str,
-    ) -> Optional[
-        VideoProviderEntry
-    ]:
-        """
-        Get a registered provider.
-        """
+    ) -> Optional[VideoProviderEntry]:
 
         provider_name = str(
             name or ""
@@ -376,12 +354,7 @@ class VideoGenerationManager:
 
     def get_all_providers(
         self,
-    ) -> List[
-        VideoProviderEntry
-    ]:
-        """
-        Return all registered providers.
-        """
+    ) -> List[VideoProviderEntry]:
 
         return list(
             self._providers.values()
@@ -390,9 +363,6 @@ class VideoGenerationManager:
     def get_provider_names(
         self,
     ) -> List[str]:
-        """
-        Return sorted provider names.
-        """
 
         return sorted(
             self._providers.keys()
@@ -442,9 +412,6 @@ class VideoGenerationManager:
         self,
         name: str,
     ) -> bool:
-        """
-        Check whether a provider has usable credentials.
-        """
 
         entry = self.get_provider(
             name
@@ -475,11 +442,6 @@ class VideoGenerationManager:
     def get_status(
         self,
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Return provider availability status.
-
-        No API key values are returned.
-        """
 
         status = {}
 
@@ -515,13 +477,7 @@ class VideoGenerationManager:
 
     def get_available_providers(
         self,
-    ) -> List[
-        VideoProviderEntry
-    ]:
-        """
-        Return enabled and configured providers
-        ordered by priority.
-        """
+    ) -> List[VideoProviderEntry]:
 
         available = []
 
@@ -561,15 +517,7 @@ class VideoGenerationManager:
     def _build_provider_order(
         self,
         preferred_provider: Optional[str],
-    ) -> List[
-        VideoProviderEntry
-    ]:
-        """
-        Build generation order.
-
-        Preferred provider is tried first.
-        Remaining providers follow priority.
-        """
+    ) -> List[VideoProviderEntry]:
 
         available = (
             self.get_available_providers()
@@ -603,6 +551,49 @@ class VideoGenerationManager:
         )
 
     # ========================================================
+    # GENERATOR CALL
+    # ========================================================
+
+    @staticmethod
+    def _call_generator(
+        generator: Callable[..., Dict[str, Any]],
+        prompt: str,
+        generation_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Call providers using their common interface.
+
+        Kling accepts a request object, while legacy
+        providers may accept prompt + kwargs.
+        """
+
+        try:
+
+            return generator(
+                prompt,
+                **generation_kwargs,
+            )
+
+        except TypeError as first_error:
+
+            request = dict(
+                generation_kwargs
+            )
+
+            request[
+                "prompt"
+            ] = prompt
+
+            try:
+
+                return generator(
+                    request
+                )
+
+            except TypeError:
+                raise first_error
+
+    # ========================================================
     # GENERATE
     # ========================================================
 
@@ -616,13 +607,6 @@ class VideoGenerationManager:
         fallback: bool = True,
         **kwargs: Any,
     ) -> VideoGenerationResult:
-        """
-        Generate a video using the provider system.
-
-        If fallback=True, the manager automatically tries
-        other configured providers when the current provider
-        fails.
-        """
 
         prompt = str(
             prompt or ""
@@ -641,8 +625,6 @@ class VideoGenerationManager:
         provider_order = (
             self._build_provider_order(
                 preferred_provider=provider
-                if provider
-                else None
             )
         )
 
@@ -670,7 +652,6 @@ class VideoGenerationManager:
         attempts = []
 
         if not fallback:
-
             provider_order = (
                 provider_order[:1]
             )
@@ -702,18 +683,21 @@ class VideoGenerationManager:
                 )
 
                 if output_path is not None:
+
                     generation_kwargs[
                         "output_path"
                     ] = output_path
 
                 if model is not None:
+
                     generation_kwargs[
                         "model"
                     ] = model
 
-                result = generator(
+                result = self._call_generator(
+                    generator,
                     prompt,
-                    **generation_kwargs,
+                    generation_kwargs,
                 )
 
                 if not isinstance(
@@ -752,6 +736,17 @@ class VideoGenerationManager:
                     }
                 )
 
+                metadata = result.get(
+                    "metadata",
+                    {},
+                )
+
+                if not isinstance(
+                    metadata,
+                    dict,
+                ):
+                    metadata = {}
+
                 return VideoGenerationResult(
                     success=True,
                     provider=str(
@@ -771,6 +766,11 @@ class VideoGenerationManager:
                             "output_path"
                         )
                     ),
+                    video_url=(
+                        result.get(
+                            "video_url"
+                        )
+                    ),
                     task_id=(
                         result.get(
                             "task_id"
@@ -783,12 +783,7 @@ class VideoGenerationManager:
                         )
                     ),
                     attempts=attempts,
-                    metadata=(
-                        result.get(
-                            "metadata",
-                            {},
-                        )
-                    ),
+                    metadata=metadata,
                 )
 
             except Exception as error:
@@ -833,9 +828,6 @@ class VideoGenerationManager:
         prompt: str,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """
-        Generate a video and return a dictionary.
-        """
 
         result = self.generate(
             prompt,
@@ -851,10 +843,6 @@ class VideoGenerationManager:
     def test_configuration(
         self,
     ) -> Dict[str, Any]:
-        """
-        Check provider configuration without
-        generating a video.
-        """
 
         status = self.get_status()
 
@@ -895,9 +883,6 @@ video_manager = (
 def get_video_manager() -> (
     VideoGenerationManager
 ):
-    """
-    Return the global video manager.
-    """
 
     return video_manager
 
@@ -905,9 +890,6 @@ def get_video_manager() -> (
 def get_video_provider_status() -> (
     Dict[str, Dict[str, Any]]
 ):
-    """
-    Return safe provider status.
-    """
 
     return (
         video_manager.get_status()
@@ -917,10 +899,6 @@ def get_video_provider_status() -> (
 def get_available_video_providers() -> (
     List[str]
 ):
-    """
-    Return names of currently available
-    video providers.
-    """
 
     return [
         entry.name
@@ -938,9 +916,6 @@ def generate_video(
     fallback: bool = True,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """
-    Main public video-generation function.
-    """
 
     return video_manager.generate_video(
         prompt=prompt,
@@ -955,12 +930,21 @@ def generate_video(
 def test_video_providers() -> (
     Dict[str, Any]
 ):
-    """
-    Test configuration of all registered
-    video providers.
-    """
 
     return (
         video_manager
         .test_configuration()
     )
+
+
+__all__ = [
+    "VideoGenerationResult",
+    "VideoProviderEntry",
+    "VideoGenerationManager",
+    "video_manager",
+    "get_video_manager",
+    "get_video_provider_status",
+    "get_available_video_providers",
+    "generate_video",
+    "test_video_providers",
+]
