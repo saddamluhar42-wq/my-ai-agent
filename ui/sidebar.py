@@ -15,15 +15,7 @@ def render_sidebar():
 
     with st.sidebar:
 
-        # ====================================================
-        # BRAND
-        # ====================================================
-
         render_brand()
-
-        # ====================================================
-        # NEW CHAT
-        # ====================================================
 
         if st.button(
             "＋  New chat",
@@ -32,10 +24,6 @@ def render_sidebar():
             key="sidebar_new_chat",
         ):
             _reset_chat()
-
-        # ====================================================
-        # SEARCH
-        # ====================================================
 
         st.text_input(
             "Search",
@@ -46,47 +34,23 @@ def render_sidebar():
 
         st.divider()
 
-        # ====================================================
-        # CONVERSATIONS
-        # ====================================================
-
         render_conversation_section()
 
         st.divider()
-
-        # ====================================================
-        # AI
-        # ====================================================
 
         render_ai_section()
 
         st.divider()
 
-        # ====================================================
-        # SERVICES
-        # ====================================================
-
         render_services_section()
 
         st.divider()
-
-        # ====================================================
-        # CURRENT CHAT
-        # ====================================================
 
         render_current_chat_section()
 
         st.divider()
 
-        # ====================================================
-        # SETTINGS
-        # ====================================================
-
         render_settings_section()
-
-        # ====================================================
-        # FOOTER
-        # ====================================================
 
         render_footer()
 
@@ -103,9 +67,7 @@ def render_brand():
     )
 
     with col1:
-        st.markdown(
-            "### 🤖"
-        )
+        st.markdown("### 🤖")
 
     with col2:
         st.markdown(
@@ -123,9 +85,7 @@ def render_brand():
 
 def render_conversation_section():
 
-    st.markdown(
-        "**Recent chats**"
-    )
+    st.markdown("**Recent chats**")
 
     messages = st.session_state.get(
         "messages",
@@ -133,16 +93,8 @@ def render_conversation_section():
     )
 
     if not messages:
-
-        st.caption(
-            "No conversations yet."
-        )
-
+        st.caption("No conversations yet.")
         return
-
-    # --------------------------------------------------------
-    # Current conversation preview
-    # --------------------------------------------------------
 
     user_messages = [
         message
@@ -177,10 +129,7 @@ def render_conversation_section():
                 ] = True
 
     else:
-
-        st.caption(
-            "Current chat"
-        )
+        st.caption("Current chat")
 
 
 # ============================================================
@@ -189,9 +138,7 @@ def render_conversation_section():
 
 def render_ai_section():
 
-    st.markdown(
-        "**AI model**"
-    )
+    st.markdown("**AI model**")
 
     provider_options = [
         "Auto",
@@ -210,6 +157,10 @@ def render_ai_section():
 
     if current_provider not in provider_options:
         current_provider = "Auto"
+
+        st.session_state[
+            "preferred_provider"
+        ] = "Auto"
 
     st.selectbox(
         "Provider",
@@ -243,58 +194,38 @@ def render_ai_section():
 
 def render_services_section():
 
-    st.markdown(
-        "**Services**"
-    )
+    st.markdown("**Services**")
 
     status = get_config_status()
 
     render_status_row(
         "Gemini",
-        status.get(
-            "gemini",
-            False,
-        ),
+        status.get("gemini", False),
     )
 
     render_status_row(
         "OpenRouter",
-        status.get(
-            "openrouter",
-            False,
-        ),
+        status.get("openrouter", False),
     )
 
     render_status_row(
         "Groq",
-        status.get(
-            "groq",
-            False,
-        ),
+        status.get("groq", False),
     )
 
     render_status_row(
         "Cerebras",
-        status.get(
-            "cerebras",
-            False,
-        ),
+        status.get("cerebras", False),
     )
 
     render_status_row(
         "Mistral",
-        status.get(
-            "mistral",
-            False,
-        ),
+        status.get("mistral", False),
     )
 
     render_status_row(
         "Anthropic",
-        status.get(
-            "anthropic",
-            False,
-        ),
+        status.get("anthropic", False),
     )
 
     st.markdown(
@@ -304,42 +235,27 @@ def render_services_section():
 
     render_status_row(
         "NVIDIA Image",
-        status.get(
-            "nvidia",
-            False,
-        ),
+        status.get("nvidia", False),
     )
 
     render_status_row(
         "Hugging Face Image",
-        status.get(
-            "huggingface",
-            False,
-        ),
+        status.get("huggingface", False),
     )
 
     render_status_row(
         "Tavily Search",
-        status.get(
-            "tavily",
-            False,
-        ),
+        status.get("tavily", False),
     )
 
     render_status_row(
         "PostgreSQL",
-        status.get(
-            "database",
-            False,
-        ),
+        status.get("database", False),
     )
 
     render_status_row(
         "Telegram",
-        status.get(
-            "telegram",
-            False,
-        ),
+        status.get("telegram", False),
     )
 
 
@@ -399,9 +315,7 @@ def render_status_row(
 
 def render_current_chat_section():
 
-    st.markdown(
-        "**Current chat**"
-    )
+    st.markdown("**Current chat**")
 
     if st.button(
         "🧹  Clear conversation",
@@ -418,8 +332,7 @@ def render_current_chat_section():
     if uploaded_files:
 
         st.caption(
-            f"📎 {len(uploaded_files)} "
-            "file(s) attached"
+            f"📎 {len(uploaded_files)} file(s) attached"
         )
 
         if st.button(
@@ -450,9 +363,28 @@ def render_current_chat_section():
 
 def render_settings_section():
 
-    st.markdown(
-        "**Settings**"
-    )
+    st.markdown("**Settings**")
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Initialize session-state values BEFORE creating widgets.
+    # Do NOT use value= together with a key that already exists.
+    # --------------------------------------------------------
+
+    if "show_provider_info" not in st.session_state:
+        st.session_state[
+            "show_provider_info"
+        ] = True
+
+    if "enable_chat_memory" not in st.session_state:
+        st.session_state[
+            "enable_chat_memory"
+        ] = True
+
+    if "confirm_image_generation" not in st.session_state:
+        st.session_state[
+            "confirm_image_generation"
+        ] = True
 
     with st.expander(
         "⚙️  App settings",
@@ -461,19 +393,16 @@ def render_settings_section():
 
         st.checkbox(
             "Show provider information",
-            value=True,
             key="show_provider_info",
         )
 
         st.checkbox(
             "Enable chat memory",
-            value=True,
             key="enable_chat_memory",
         )
 
         st.checkbox(
             "Confirm image generation",
-            value=True,
             disabled=True,
             key="confirm_image_generation",
         )
@@ -490,9 +419,7 @@ def render_settings_section():
 
 def render_footer():
 
-    st.caption(
-        "My AI Agent"
-    )
+    st.caption("My AI Agent")
 
     st.caption(
         "Streamlit • PostgreSQL • Multi-AI"
