@@ -82,6 +82,30 @@ class AgentPlanner:
                 query
             )
 
+        # ----------------------------------------------------
+        # LIVE WEB RESEARCH
+        # ----------------------------------------------------
+        # Every substantive user query gets a web-research
+        # support step. The core layer will execute it only
+        # when Tavily is configured. This prevents the old
+        # keyword-only behavior where ordinary questions never
+        # reached the live web.
+        if self._has_registered_skill("web_research"):
+            if not any(
+                step.skill_name == "web_research"
+                for step in steps
+            ):
+                steps.append(
+                    PlanStep(
+                        skill_name="web_research",
+                        purpose=(
+                            "Check current web information and "
+                            "use reliable live sources when available."
+                        ),
+                        order=len(steps) + 1,
+                    )
+                )
+
         primary_skill = (
             steps[0].skill_name
         )
@@ -97,6 +121,17 @@ class AgentPlanner:
                 )
             ),
         )
+
+    @staticmethod
+    def _has_registered_skill(skill_name: str) -> bool:
+        try:
+            skill = get_skill(skill_name)
+            return bool(
+                skill is not None
+                and getattr(skill, "enabled", False)
+            )
+        except Exception:
+            return False
 
     def _build_steps(
         self,
@@ -241,12 +276,28 @@ class AgentPlanner:
             order=1,
         )
 
+        steps = [step]
+
+        if self._has_registered_skill("web_research"):
+            steps.append(
+                PlanStep(
+                    skill_name="web_research",
+                    purpose=(
+                        "Check current web information and "
+                        "use reliable live sources when available."
+                    ),
+                    order=2,
+                )
+            )
+
         return AgentPlan(
             query=query,
             primary_skill=self.default_skill,
-            steps=[step],
+            steps=steps,
             requires_memory=True,
-            requires_verification=False,
+            requires_verification=(
+                len(steps) > 1
+            ),
         )
 
     @staticmethod
