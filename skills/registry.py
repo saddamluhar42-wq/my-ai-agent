@@ -1,167 +1,134 @@
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 
-@dataclass
-class Skill:
+@dataclass(frozen=True)
+class SkillDefinition:
     name: str
     description: str
-    keywords: List[str] = field(default_factory=list)
-    handler: Optional[Callable] = None
-    priority: int = 0
+    keywords: List[str] = field(
+        default_factory=list
+    )
+    priority: int = 50
     enabled: bool = True
-
-    def matches(self, query: str) -> bool:
-        if not self.enabled:
-            return False
-
-        query = (query or "").lower().strip()
-
-        if not query:
-            return False
-
-        return any(
-            keyword.lower() in query
-            for keyword in self.keywords
-        )
 
 
 class SkillRegistry:
-    """
-    Central registry for all AI Agent skills.
-
-    Responsibilities:
-    - Register skills
-    - Enable/disable skills
-    - Find matching skills
-    - Rank skills
-    - Provide skill information to the agent
-    """
 
     def __init__(self):
-        self._skills: Dict[str, Skill] = {}
+
+        self._skills: Dict[
+            str,
+            SkillDefinition,
+        ] = {}
 
     def register(
         self,
+        skill: SkillDefinition,
+    ):
+
+        if not skill.name:
+            raise ValueError(
+                "Skill name is required."
+            )
+
+        self._skills[
+            skill.name
+        ] = skill
+
+    def get(
+        self,
         name: str,
-        description: str,
-        keywords: Optional[List[str]] = None,
-        handler: Optional[Callable] = None,
-        priority: int = 0,
-    ) -> Skill:
-        skill = Skill(
-            name=name,
-            description=description,
-            keywords=keywords or [],
-            handler=handler,
-            priority=priority,
-            enabled=True,
+    ) -> Optional[SkillDefinition]:
+
+        return self._skills.get(
+            name
         )
 
-        self._skills[name] = skill
+    def all(
+        self,
+    ) -> List[SkillDefinition]:
 
-        return skill
+        return list(
+            self._skills.values()
+        )
 
-    def unregister(self, name: str) -> bool:
-        if name not in self._skills:
-            return False
+    def enabled(
+        self,
+    ) -> List[SkillDefinition]:
 
-        del self._skills[name]
-        return True
-
-    def enable(self, name: str) -> bool:
-        skill = self._skills.get(name)
-
-        if not skill:
-            return False
-
-        skill.enabled = True
-        return True
-
-    def disable(self, name: str) -> bool:
-        skill = self._skills.get(name)
-
-        if not skill:
-            return False
-
-        skill.enabled = False
-        return True
-
-    def get(self, name: str) -> Optional[Skill]:
-        return self._skills.get(name)
-
-    def all(self) -> List[Skill]:
-        return list(self._skills.values())
-
-    def enabled(self) -> List[Skill]:
         return [
             skill
             for skill in self._skills.values()
             if skill.enabled
         ]
 
-    def find_matches(
+    def names(
         self,
-        query: str,
-        limit: int = 5,
-    ) -> List[Skill]:
-        matches = []
+    ) -> List[str]:
 
-        for skill in self.enabled():
-            if skill.matches(query):
-                matches.append(skill)
-
-        matches.sort(
-            key=lambda skill: skill.priority,
-            reverse=True,
+        return sorted(
+            self._skills.keys()
         )
 
-        return matches[:limit]
+    def disable(
+        self,
+        name: str,
+    ):
 
-    def get_skill_names(self) -> List[str]:
-        return [
-            skill.name
-            for skill in self.enabled()
-        ]
+        skill = self.get(name)
 
-    def build_skill_context(self) -> str:
-        skills = self.enabled()
+        if skill is None:
+            return False
 
-        if not skills:
-            return "No specialized skills are currently available."
+        self._skills[
+            name
+        ] = SkillDefinition(
+            name=skill.name,
+            description=skill.description,
+            keywords=skill.keywords,
+            priority=skill.priority,
+            enabled=False,
+        )
 
-        lines = [
-            "AVAILABLE AGENT SKILLS:"
-        ]
+        return True
 
-        for skill in skills:
-            lines.append(
-                f"- {skill.name}: "
-                f"{skill.description}"
-            )
+    def enable(
+        self,
+        name: str,
+    ):
 
-        return "\n".join(lines)
+        skill = self.get(name)
+
+        if skill is None:
+            return False
+
+        self._skills[
+            name
+        ] = SkillDefinition(
+            name=skill.name,
+            description=skill.description,
+            keywords=skill.keywords,
+            priority=skill.priority,
+            enabled=True,
+        )
+
+        return True
 
 
 registry = SkillRegistry()
 
 
-def register_default_skills():
-    """
-    Register the initial built-in skill categories.
+# ============================================================
+# CORE SKILLS
+# ============================================================
 
-    Actual implementations will be connected
-    in later project files.
-    """
-
-    if registry.all():
-        return registry
-
-    registry.register(
+registry.register(
+    SkillDefinition(
         name="general_knowledge",
         description=(
-            "Answer general questions, explanations, "
-            "reasoning and everyday knowledge."
+            "General reasoning, explanations, "
+            "questions and answers."
         ),
         keywords=[
             "what",
@@ -170,39 +137,41 @@ def register_default_skills():
             "explain",
             "meaning",
             "difference",
-            "who",
-            "when",
-            "where",
+            "help",
         ],
-        priority=10,
+        priority=100,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="web_research",
         description=(
-            "Find and reason about current or "
-            "time-sensitive information from the web."
+            "Research current or external information "
+            "from the web."
         ),
         keywords=[
             "latest",
             "today",
             "current",
             "news",
-            "recent",
             "search",
+            "research",
             "online",
-            "internet",
-            "price",
-            "weather",
+            "website",
         ],
-        priority=30,
+        priority=95,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="coding",
         description=(
-            "Write, explain, debug, review and "
-            "improve programming code."
+            "Programming, debugging, architecture, "
+            "scripts and software development."
         ),
         keywords=[
             "code",
@@ -213,39 +182,45 @@ def register_default_skills():
             "kotlin",
             "html",
             "css",
-            "sql",
-            "programming",
+            "api",
             "bug",
             "error",
             "debug",
+            "program",
         ],
-        priority=40,
+        priority=95,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="file_analysis",
         description=(
-            "Analyze uploaded documents, PDFs, "
-            "text files and other supported files."
+            "Analyze uploaded documents, files, "
+            "PDFs and structured data."
         ),
         keywords=[
             "file",
             "pdf",
             "document",
-            "uploaded",
+            "csv",
+            "json",
+            "docx",
+            "upload",
             "attachment",
-            "read",
-            "analyze",
-            "summarize",
         ],
-        priority=35,
+        priority=90,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="image_understanding",
         description=(
-            "Understand and analyze images supplied "
-            "by the user."
+            "Understand and analyze images "
+            "provided by the user."
         ),
         keywords=[
             "image",
@@ -253,69 +228,129 @@ def register_default_skills():
             "picture",
             "screenshot",
             "visual",
-            "image analysis",
+            "look",
+            "shown",
         ],
-        priority=35,
+        priority=85,
     )
+)
 
-    registry.register(
-        name="writing",
+
+registry.register(
+    SkillDefinition(
+        name="image_generation",
         description=(
-            "Create, rewrite, improve and structure "
-            "written content."
+            "Generate images from natural-language "
+            "descriptions."
         ),
         keywords=[
-            "write",
-            "rewrite",
-            "draft",
-            "article",
-            "script",
-            "email",
-            "story",
-            "description",
-            "title",
+            "generate image",
+            "create image",
+            "make image",
+            "image banao",
+            "photo banao",
+            "picture banao",
+            "draw",
+            "illustration",
         ],
-        priority=20,
+        priority=90,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="memory",
         description=(
-            "Use relevant conversation history and "
-            "stored knowledge to maintain context."
+            "Use relevant conversation memory "
+            "and persistent knowledge."
         ),
         keywords=[
             "remember",
             "previous",
             "earlier",
-            "last time",
             "before",
             "memory",
-            "history",
+            "saved",
         ],
-        priority=25,
+        priority=80,
     )
+)
 
-    registry.register(
+
+registry.register(
+    SkillDefinition(
         name="self_evolution",
         description=(
-            "Learn from feedback, identify missing "
-            "capabilities and improve the agent's "
-            "knowledge and skill configuration."
+            "Evaluate useful information from "
+            "interactions for future learning."
         ),
         keywords=[
             "learn",
-            "improve",
+            "learning",
             "evolve",
-            "feedback",
-            "mistake",
-            "better",
-            "teach",
+            "improve",
+            "remember this",
+            "save this",
         ],
-        priority=50,
+        priority=75,
+    )
+)
+
+
+# ============================================================
+# PUBLIC HELPERS
+# ============================================================
+
+def get_skill(
+    name: str,
+) -> Optional[SkillDefinition]:
+
+    return registry.get(name)
+
+
+def get_all_skills() -> List[SkillDefinition]:
+
+    return registry.all()
+
+
+def get_enabled_skills() -> List[SkillDefinition]:
+
+    return registry.enabled()
+
+
+def get_skill_names() -> List[str]:
+
+    return registry.names()
+
+
+def register_skill(
+    name: str,
+    description: str,
+    keywords: Optional[List[str]] = None,
+    priority: int = 50,
+):
+
+    skill = SkillDefinition(
+        name=name,
+        description=description,
+        keywords=keywords or [],
+        priority=priority,
+        enabled=True,
     )
 
-    return registry
+    registry.register(skill)
 
 
-register_default_skills()
+def enable_skill(
+    name: str,
+) -> bool:
+
+    return registry.enable(name)
+
+
+def disable_skill(
+    name: str,
+) -> bool:
+
+    return registry.disable(name)
