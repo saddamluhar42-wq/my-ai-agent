@@ -1,13 +1,11 @@
 import streamlit as st
 
+from agent.core import run_agent
 from ai.agent import (
     AgentError,
-    generate,
     generate_image,
     is_image_generation_available,
 )
-from ai.prompts import build_agent_prompt
-from config import MAX_CONVERSATION_MESSAGES
 from database.memory import (
     build_memory_context,
     get_recent_messages,
@@ -56,11 +54,8 @@ IMAGE_REQUEST_PHRASES = [
     "create image",
     "make image",
     "generate an image",
-    "generate a image",
     "create an image",
-    "create a image",
     "make an image",
-    "make a image",
     "image generate",
     "image banao",
     "image bana",
@@ -195,18 +190,10 @@ def render_chat_header():
 
 def render_empty_state():
 
-    # --------------------------------------------------------
-    # Top spacing
-    # --------------------------------------------------------
-
     st.markdown(
         "<div style='height:55px'></div>",
         unsafe_allow_html=True,
     )
-
-    # --------------------------------------------------------
-    # CHARACTER IMAGE
-    # --------------------------------------------------------
 
     image_col_left, image_col, image_col_right = st.columns(
         [1, 1, 1]
@@ -236,10 +223,6 @@ def render_empty_state():
                 unsafe_allow_html=True,
             )
 
-    # --------------------------------------------------------
-    # TITLE
-    # --------------------------------------------------------
-
     st.markdown(
         """
         <div style="
@@ -259,10 +242,6 @@ def render_empty_state():
         unsafe_allow_html=True,
     )
 
-    # --------------------------------------------------------
-    # SUBTITLE
-    # --------------------------------------------------------
-
     st.markdown(
         """
         <div style="
@@ -277,10 +256,6 @@ def render_empty_state():
         """,
         unsafe_allow_html=True,
     )
-
-    # --------------------------------------------------------
-    # SUGGESTION BUTTONS
-    # --------------------------------------------------------
 
     col1, col2, col3 = st.columns(
         3,
@@ -354,10 +329,6 @@ def render_messages():
 
         with st.chat_message(role):
 
-            # ------------------------------------------------
-            # IMAGE
-            # ------------------------------------------------
-
             if message_type == "image":
 
                 render_image_message(
@@ -367,19 +338,11 @@ def render_messages():
 
                 continue
 
-            # ------------------------------------------------
-            # TEXT
-            # ------------------------------------------------
-
             if content:
 
                 st.markdown(
                     content
                 )
-
-            # ------------------------------------------------
-            # PROVIDER
-            # ------------------------------------------------
 
             if (
                 role == "assistant"
@@ -493,29 +456,17 @@ def render_composer():
         submission.files
     )
 
-    # --------------------------------------------------------
-    # FILES
-    # --------------------------------------------------------
-
     if files:
 
         process_uploaded_files(
             files
         )
 
-    # --------------------------------------------------------
-    # FILE ONLY MESSAGE
-    # --------------------------------------------------------
-
     if not text and files:
 
         text = build_file_message(
             files
         )
-
-    # --------------------------------------------------------
-    # MESSAGE
-    # --------------------------------------------------------
 
     if text:
 
@@ -620,12 +571,10 @@ def is_image_request(prompt):
 
     text = prompt.lower().strip()
 
-    for phrase in IMAGE_REQUEST_PHRASES:
-
-        if phrase in text:
-            return True
-
-    return False
+    return any(
+        phrase in text
+        for phrase in IMAGE_REQUEST_PHRASES
+    )
 
 
 # ============================================================
@@ -690,10 +639,6 @@ def handle_pending_image_confirmation(
     if not pending_prompt:
         return False
 
-    # --------------------------------------------------------
-    # YES
-    # --------------------------------------------------------
-
     if is_yes_confirmation(prompt):
 
         st.session_state[
@@ -714,10 +659,6 @@ def handle_pending_image_confirmation(
         )
 
         return True
-
-    # --------------------------------------------------------
-    # NO
-    # --------------------------------------------------------
 
     if is_no_confirmation(prompt):
 
@@ -748,10 +689,6 @@ def handle_pending_image_confirmation(
         st.rerun()
 
         return True
-
-    # --------------------------------------------------------
-    # INVALID CONFIRMATION
-    # --------------------------------------------------------
 
     st.session_state[
         "messages"
@@ -960,13 +897,9 @@ def handle_user_message(
         recent_messages = (
             get_recent_messages(
                 conversation_id,
-                limit=MAX_CONVERSATION_MESSAGES,
+                limit=30,
             )
         )
-
-        # ----------------------------------------------------
-        # MEMORY
-        # ----------------------------------------------------
 
         if st.session_state.get(
             "enable_chat_memory",
@@ -984,20 +917,12 @@ def handle_user_message(
 
             memory_context = ""
 
-        # ----------------------------------------------------
-        # FILE CONTEXT
-        # ----------------------------------------------------
-
         file_context = (
             st.session_state.get(
                 "file_context",
                 "",
             )
         )
-
-        # ----------------------------------------------------
-        # PROVIDER
-        # ----------------------------------------------------
 
         preferred_provider = (
             st.session_state.get(
@@ -1007,52 +932,60 @@ def handle_user_message(
         )
 
         if preferred_provider == "Auto":
-
             preferred_provider = None
 
         # ----------------------------------------------------
-        # AGENT PROMPT
+        # AGENT CORE
         # ----------------------------------------------------
 
-        agent_prompt = (
-            build_agent_prompt(
-                user_input=prompt,
-                messages=recent_messages,
-                memory_context=memory_context,
-                file_context=file_context,
-            )
-        )
-
-        # ----------------------------------------------------
-        # AI
-        # ----------------------------------------------------
+        context = {
+            "memory_context": memory_context,
+            "file_context": file_context,
+            "recent_messages": recent_messages,
+            "preferred_provider": preferred_provider,
+            "uploaded_files": (
+                st.session_state.get(
+                    "uploaded_files",
+                    [],
+                )
+            ),
+        }
 
         with st.spinner(
             "Thinking..."
         ):
 
-            result = generate(
-                prompt=agent_prompt,
-                preferred_provider=preferred_provider,
+            result = run_agent(
+                query=prompt,
+                context=context,
             )
 
-        answer = result.get(
-            "answer",
-            "",
-        )
+        if not result.success:
 
-        provider = result.get(
-            "provider",
-        )
+            error_message = result.metadata.get(
+                "error",
+                "Agent execution failed.",
+            )
 
-        model = result.get(
+            raise AgentError(
+                error_message
+            )
+
+        answer = result.answer
+
+        provider = result.provider
+
+        metadata = result.metadata or {}
+
+        model = metadata.get(
             "model",
+            "",
         )
 
         if not answer:
 
             raise AgentError(
-                "AI returned an empty response."
+                "Agent returned an empty response."
             )
 
         # ----------------------------------------------------
@@ -1078,6 +1011,10 @@ def handle_user_message(
                 "provider": provider,
                 "model": model,
                 "type": "text",
+                "skill": metadata.get(
+                    "primary_skill",
+                    "",
+                ),
             }
         )
 
