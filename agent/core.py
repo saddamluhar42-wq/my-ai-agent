@@ -6,6 +6,12 @@ from agent.executor import ExecutionResult
 from agent.knowledge import build_knowledge_context
 from agent.planner import create_plan
 from ai.agent import AgentError, generate
+from search.tavily import (
+    TavilyError,
+    format_results,
+    is_configured as is_tavily_configured,
+    search as tavily_search,
+)
 
 
 class AgentCore:
@@ -129,6 +135,11 @@ class AgentCore:
             "preferred_provider"
         )
 
+        web_context = self._build_web_context(
+            query=query,
+            plan=plan,
+        )
+
         current_time_utc = datetime.now(
             timezone.utc
         )
@@ -146,6 +157,7 @@ class AgentCore:
             memory_context=memory_context,
             knowledge_context=knowledge_context,
             file_context=file_context,
+            web_context=web_context,
             recent_messages=recent_messages,
             preferred_provider=preferred_provider,
             current_time_utc=current_time_utc,
@@ -296,6 +308,7 @@ class AgentCore:
         memory_context: str,
         knowledge_context: str,
         file_context: str,
+        web_context: str,
         recent_messages,
         preferred_provider=None,
         current_time_utc=None,
@@ -328,7 +341,7 @@ class AgentCore:
             "before answering.",
 
             "Use available memory, persistent knowledge, "
-            "files, and conversation context when relevant.",
+            "files, conversation context, and web search context when relevant.",
 
             "Do not invent facts, sources, files, tool results, "
             "or capabilities.",
@@ -439,6 +452,20 @@ class AgentCore:
             )
 
         # ----------------------------------------------------
+        # WEB CONTEXT
+        # ----------------------------------------------------
+
+        if web_context:
+
+            sections.extend(
+                [
+                    "",
+                    "WEB SEARCH CONTEXT:",
+                    web_context,
+                ]
+            )
+
+        # ----------------------------------------------------
         # PROVIDER
         # ----------------------------------------------------
 
@@ -507,6 +534,8 @@ class AgentCore:
                 "and no tool is available, say so.",
                 "13. Use current time context for date/time-sensitive questions.",
                 "14. Keep the answer appropriate to the user's request.",
+                "15. If the answer depends on current or external facts, prefer web search first when available.",
+                "16. If you still do not know the answer, say: \"I can research that for you if you want.\"",
                 "",
                 "SELF-EVOLUTION:",
                 "The agent has a persistent learning system.",
@@ -520,6 +549,156 @@ class AgentCore:
         return "\n".join(
             sections
         )
+
+    def _build_web_context(
+        self,
+        query: str,
+        plan,
+    ) -> str:
+
+        if not is_tavily_configured():
+            return (
+                "Web search is not configured. "
+                "If the answer depends on current facts, "
+                "say: 'I can research that for you if you want.'"
+            )
+
+        if not self._should_search_web(
+            query=query,
+            plan=plan,
+        ):
+            return ""
+
+        search_query = self._build_search_query(
+            query
+        )
+
+        try:
+
+            result = tavily_search(
+                search_query,
+                search_depth="advanced",
+                max_results=5,
+                include_answer=True,
+            )
+
+            formatted = format_results(
+                result
+            )
+
+            if formatted.strip():
+                return formatted
+
+        except TavilyError as error:
+            return (
+                "Web search failed: "
+                f"{error}"
+            )
+
+        except Exception as error:
+            return (
+                "Web search failed unexpectedly: "
+                f"{error}"
+            )
+
+        return ""
+
+    @staticmethod
+    def _should_search_web(
+        query: str,
+        plan,
+    ) -> bool:
+
+        query_text = str(
+            query or ""
+        ).lower()
+
+        web_keywords = (
+            "today",
+            "current",
+            "right now",
+            "latest",
+            "news",
+            "weather",
+            "mausam",
+            "forecast",
+            "price",
+            "rate",
+            "stock",
+            "who won",
+            "winner",
+            "open now",
+            "available now",
+            "live",
+            "real time",
+            "real-time",
+        )
+
+        if any(
+            keyword in query_text
+            for keyword in web_keywords
+        ):
+            return True
+
+        if plan is not None:
+
+            primary_skill = str(
+                getattr(
+                    plan,
+                    "primary_skill",
+                    "",
+                )
+                or ""
+            ).lower()
+
+            if primary_skill in {
+                "web_research",
+                "research",
+            }:
+                return True
+
+            for step in getattr(
+                plan,
+                "steps",
+                [],
+            ):
+
+                skill_name = str(
+                    getattr(
+                        step,
+                        "skill_name",
+                        "",
+                    )
+                    or ""
+                ).lower()
+
+                if skill_name in {
+                    "web_research",
+                    "research",
+                }:
+                    return True
+
+        return False
+
+    @staticmethod
+    def _build_search_query(
+        query: str,
+    ) -> str:
+
+        text = str(
+            query or ""
+        ).strip()
+
+        if not text:
+            return "current information"
+
+        if "weather" in text.lower() or "mausam" in text.lower():
+            return (
+                f"{text} weather forecast today "
+                "current conditions"
+            )
+
+        return text
 
 
 # ============================================================
