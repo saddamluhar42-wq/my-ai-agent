@@ -16,7 +16,6 @@ class SkillDefinition:
 class SkillRegistry:
 
     def __init__(self):
-
         self._skills: Dict[
             str,
             SkillDefinition,
@@ -26,7 +25,6 @@ class SkillRegistry:
         self,
         skill: SkillDefinition,
     ):
-
         if not skill.name:
             raise ValueError(
                 "Skill name is required."
@@ -40,15 +38,11 @@ class SkillRegistry:
         self,
         name: str,
     ) -> Optional[SkillDefinition]:
-
-        return self._skills.get(
-            name
-        )
+        return self._skills.get(name)
 
     def all(
         self,
     ) -> List[SkillDefinition]:
-
         return list(
             self._skills.values()
         )
@@ -56,7 +50,6 @@ class SkillRegistry:
     def enabled(
         self,
     ) -> List[SkillDefinition]:
-
         return [
             skill
             for skill in self._skills.values()
@@ -66,7 +59,6 @@ class SkillRegistry:
     def names(
         self,
     ) -> List[str]:
-
         return sorted(
             self._skills.keys()
         )
@@ -75,15 +67,12 @@ class SkillRegistry:
         self,
         name: str,
     ):
-
         skill = self.get(name)
 
         if skill is None:
             return False
 
-        self._skills[
-            name
-        ] = SkillDefinition(
+        self._skills[name] = SkillDefinition(
             name=skill.name,
             description=skill.description,
             keywords=skill.keywords,
@@ -97,15 +86,12 @@ class SkillRegistry:
         self,
         name: str,
     ):
-
         skill = self.get(name)
 
         if skill is None:
             return False
 
-        self._skills[
-            name
-        ] = SkillDefinition(
+        self._skills[name] = SkillDefinition(
             name=skill.name,
             description=skill.description,
             keywords=skill.keywords,
@@ -114,6 +100,59 @@ class SkillRegistry:
         )
 
         return True
+
+    def find_matches(
+        self,
+        query: str,
+        limit: int = 5,
+    ) -> List[SkillDefinition]:
+
+        query_text = str(
+            query or ""
+        ).strip().lower()
+
+        if not query_text:
+            return []
+
+        scored = []
+
+        for skill in self.enabled():
+
+            score = 0
+
+            for keyword in skill.keywords:
+                keyword_text = str(
+                    keyword
+                ).strip().lower()
+
+                if not keyword_text:
+                    continue
+
+                if keyword_text in query_text:
+                    score += 10
+
+            if score > 0:
+                score += skill.priority / 100
+
+                scored.append(
+                    (
+                        score,
+                        skill,
+                    )
+                )
+
+        scored.sort(
+            key=lambda item: (
+                item[0],
+                item[1].priority,
+            ),
+            reverse=True,
+        )
+
+        return [
+            skill
+            for _, skill in scored[:limit]
+        ]
 
 
 registry = SkillRegistry()
@@ -258,6 +297,46 @@ registry.register(
 )
 
 
+# ============================================================
+# AI VIDEO GENERATION
+# ============================================================
+
+registry.register(
+    SkillDefinition(
+        name="video_generation",
+        description=(
+            "Generate AI videos from text prompts, "
+            "images, scripts or creative descriptions. "
+            "Handle video generation requests, scene "
+            "prompts, duration, aspect ratio, motion, "
+            "style and video-generation providers."
+        ),
+        keywords=[
+            "generate video",
+            "create video",
+            "make video",
+            "video banao",
+            "video generate",
+            "ai video",
+            "text to video",
+            "image to video",
+            "text-to-video",
+            "image-to-video",
+            "video prompt",
+            "video bana do",
+            "video create karo",
+            "ai video banao",
+            "animation video",
+            "cinematic video",
+            "short video",
+            "youtube short",
+            "reel video",
+        ],
+        priority=98,
+    )
+)
+
+
 registry.register(
     SkillDefinition(
         name="memory",
@@ -305,22 +384,18 @@ registry.register(
 def get_skill(
     name: str,
 ) -> Optional[SkillDefinition]:
-
     return registry.get(name)
 
 
 def get_all_skills() -> List[SkillDefinition]:
-
     return registry.all()
 
 
 def get_enabled_skills() -> List[SkillDefinition]:
-
     return registry.enabled()
 
 
 def get_skill_names() -> List[str]:
-
     return registry.names()
 
 
@@ -330,7 +405,6 @@ def register_skill(
     keywords: Optional[List[str]] = None,
     priority: int = 50,
 ):
-
     skill = SkillDefinition(
         name=name,
         description=description,
@@ -345,12 +419,10 @@ def register_skill(
 def enable_skill(
     name: str,
 ) -> bool:
-
     return registry.enable(name)
 
 
 def disable_skill(
     name: str,
 ) -> bool:
-
     return registry.disable(name)
