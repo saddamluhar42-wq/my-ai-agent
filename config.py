@@ -18,88 +18,32 @@ RENDER_URL = os.getenv(
 # AI PROVIDERS — TEXT
 # ============================================================
 
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY"
-)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
 
-GEMINI_API_KEY_2 = os.getenv(
-    "GEMINI_API_KEY_2"
-)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY_2 = os.getenv("OPENROUTER_API_KEY_2")
 
-OPENROUTER_API_KEY = os.getenv(
-    "OPENROUTER_API_KEY"
-)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
-OPENROUTER_API_KEY_2 = os.getenv(
-    "OPENROUTER_API_KEY_2"
-)
-
-GROQ_API_KEY = os.getenv(
-    "GROQ_API_KEY"
-)
-
-CEREBRAS_API_KEY = os.getenv(
-    "CEREBRAS_API_KEY"
-)
-
-MISTRAL_API_KEY = os.getenv(
-    "MISTRAL_API_KEY"
-)
-
-ANTHROPIC_API_KEY = os.getenv(
-    "ANTHROPIC_API_KEY"
-)
-
-ANTHROPIC_API_KEY_2 = os.getenv(
-    "ANTHROPIC_API_KEY_2"
-)
-
-ANTHROPIC_API_KEY_3 = os.getenv(
-    "ANTHROPIC_API_KEY_3"
-)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_API_KEY_2 = os.getenv("ANTHROPIC_API_KEY_2")
+ANTHROPIC_API_KEY_3 = os.getenv("ANTHROPIC_API_KEY_3")
 
 
 # ============================================================
 # IMAGE GENERATION
 # ============================================================
 
-# ------------------------------------------------------------
-# HUGGING FACE
-# ------------------------------------------------------------
+HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN_2 = os.getenv("HF_TOKEN_2")
+HF_TOKEN_3 = os.getenv("HF_TOKEN_3")
 
-HF_TOKEN = os.getenv(
-    "HF_TOKEN"
-)
-
-HF_TOKEN_2 = os.getenv(
-    "HF_TOKEN_2"
-)
-
-HF_TOKEN_3 = os.getenv(
-    "HF_TOKEN_3"
-)
-
-
-# ------------------------------------------------------------
-# NVIDIA
-# ------------------------------------------------------------
-
-NVIDIA_IMAGE_1 = os.getenv(
-    "NVIDIA_IMAGE_1"
-)
-
-NVIDIA_IMAGE_2 = os.getenv(
-    "NVIDIA_IMAGE_2"
-)
-
-NVIDIA_IMAGE_3 = os.getenv(
-    "NVIDIA_IMAGE_3"
-)
-
-
-# ============================================================
-# NVIDIA COMPATIBILITY ALIASES
-# ============================================================
+NVIDIA_IMAGE_1 = os.getenv("NVIDIA_IMAGE_1")
+NVIDIA_IMAGE_2 = os.getenv("NVIDIA_IMAGE_2")
+NVIDIA_IMAGE_3 = os.getenv("NVIDIA_IMAGE_3")
 
 NVIDIA_API_KEY = NVIDIA_IMAGE_1
 NVIDIA_API_KEY_2 = NVIDIA_IMAGE_2
@@ -132,12 +76,21 @@ GOOGLE_VIDEO_MODEL = os.getenv(
 # RUNWAY
 # ------------------------------------------------------------
 
-RUNWAY_API_KEY = os.getenv(
-    "RUNWAY_API_KEY"
+# Render names:
+# RUNWAY_API_KEY1
+# RUNWAY_API_KEY2
+# RUNWAY_API_KEY3
+
+RUNWAY_API_KEY1 = os.getenv(
+    "RUNWAY_API_KEY1"
 )
 
-RUNWAY_API_KEY_2 = os.getenv(
-    "RUNWAY_API_KEY_2"
+RUNWAY_API_KEY2 = os.getenv(
+    "RUNWAY_API_KEY2"
+)
+
+RUNWAY_API_KEY3 = os.getenv(
+    "RUNWAY_API_KEY3"
 )
 
 RUNWAY_VIDEO_MODEL = os.getenv(
@@ -150,12 +103,21 @@ RUNWAY_VIDEO_MODEL = os.getenv(
 # LUMA
 # ------------------------------------------------------------
 
-LUMA_API_KEY = os.getenv(
-    "LUMA_API_KEY"
+# Render names:
+# LUMA_API_KEY1
+# LUMA_API_KEY2
+# LUMA_API_KEY3
+
+LUMA_API_KEY1 = os.getenv(
+    "LUMA_API_KEY1"
 )
 
-LUMA_API_KEY_2 = os.getenv(
-    "LUMA_API_KEY_2"
+LUMA_API_KEY2 = os.getenv(
+    "LUMA_API_KEY2"
+)
+
+LUMA_API_KEY3 = os.getenv(
+    "LUMA_API_KEY3"
 )
 
 LUMA_VIDEO_MODEL = os.getenv(
@@ -168,12 +130,21 @@ LUMA_VIDEO_MODEL = os.getenv(
 # KLING
 # ------------------------------------------------------------
 
-KLING_API_KEY = os.getenv(
-    "KLING_API_KEY"
+# Render names:
+# KLING_API_KEY1
+# KLING_API_KEY2
+# KLING_API_KEY3
+
+KLING_API_KEY1 = os.getenv(
+    "KLING_API_KEY1"
 )
 
-KLING_API_KEY_2 = os.getenv(
-    "KLING_API_KEY_2"
+KLING_API_KEY2 = os.getenv(
+    "KLING_API_KEY2"
+)
+
+KLING_API_KEY3 = os.getenv(
+    "KLING_API_KEY3"
 )
 
 KLING_VIDEO_MODEL = os.getenv(
@@ -553,22 +524,25 @@ def is_google_video_configured():
 
 def is_runway_configured():
     return bool(
-        RUNWAY_API_KEY
-        or RUNWAY_API_KEY_2
+        RUNWAY_API_KEY1
+        or RUNWAY_API_KEY2
+        or RUNWAY_API_KEY3
     )
 
 
 def is_luma_configured():
     return bool(
-        LUMA_API_KEY
-        or LUMA_API_KEY_2
+        LUMA_API_KEY1
+        or LUMA_API_KEY2
+        or LUMA_API_KEY3
     )
 
 
 def is_kling_configured():
     return bool(
-        KLING_API_KEY
-        or KLING_API_KEY_2
+        KLING_API_KEY1
+        or KLING_API_KEY2
+        or KLING_API_KEY3
     )
 
 
@@ -577,6 +551,64 @@ def is_replicate_configured():
         REPLICATE_API_TOKEN
         or REPLICATE_API_TOKEN_2
     )
+
+
+def get_runway_keys():
+    return [
+        key
+        for key in [
+            RUNWAY_API_KEY1,
+            RUNWAY_API_KEY2,
+            RUNWAY_API_KEY3,
+        ]
+        if key
+    ]
+
+
+def get_luma_keys():
+    return [
+        key
+        for key in [
+            LUMA_API_KEY1,
+            LUMA_API_KEY2,
+            LUMA_API_KEY3,
+        ]
+        if key
+    ]
+
+
+def get_kling_keys():
+    return [
+        key
+        for key in [
+            KLING_API_KEY1,
+            KLING_API_KEY2,
+            KLING_API_KEY3,
+        ]
+        if key
+    ]
+
+
+def get_google_video_keys():
+    return [
+        key
+        for key in [
+            GOOGLE_VIDEO_API_KEY,
+            GOOGLE_VIDEO_API_KEY_2,
+        ]
+        if key
+    ]
+
+
+def get_replicate_tokens():
+    return [
+        token
+        for token in [
+            REPLICATE_API_TOKEN,
+            REPLICATE_API_TOKEN_2,
+        ]
+        if token
+    ]
 
 
 def get_configured_video_providers():
@@ -646,21 +678,11 @@ def get_config_status():
         "nvidia_3": is_nvidia_3_configured(),
 
         # Video AI
-        "google_video": (
-            is_google_video_configured()
-        ),
-        "runway_video": (
-            is_runway_configured()
-        ),
-        "luma_video": (
-            is_luma_configured()
-        ),
-        "kling_video": (
-            is_kling_configured()
-        ),
-        "replicate_video": (
-            is_replicate_configured()
-        ),
+        "google_video": is_google_video_configured(),
+        "runway_video": is_runway_configured(),
+        "luma_video": is_luma_configured(),
+        "kling_video": is_kling_configured(),
+        "replicate_video": is_replicate_configured(),
 
         "video_default_provider": (
             VIDEO_DEFAULT_PROVIDER
