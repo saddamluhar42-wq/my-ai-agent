@@ -16,147 +16,51 @@ class PlanStep:
 class AgentPlan:
     query: str
     primary_skill: str
-    steps: List[PlanStep] = field(
-        default_factory=list
-    )
+    steps: List[PlanStep] = field(default_factory=list)
     requires_memory: bool = True
     requires_verification: bool = False
 
 
 class AgentPlanner:
-    """
-    Converts a user request into an executable
-    multi-skill plan.
-
-    The planner uses the Skill Router first and
-    validates every selected skill against the
-    central Skill Registry.
-    """
+    """Create a lightweight validated plan for each user request."""
 
     def __init__(self):
         self.default_skill = "general_knowledge"
 
-    def create_plan(
-        self,
-        query: str,
-    ) -> AgentPlan:
-
-        query = str(
-            query or ""
-        ).strip()
+    def create_plan(self, query: str) -> AgentPlan:
+        query = str(query or "").strip()
 
         if not query:
-            return AgentPlan(
-                query="",
-                primary_skill=self.default_skill,
-                steps=[
-                    PlanStep(
-                        skill_name=self.default_skill,
-                        purpose=(
-                            "Handle general questions "
-                            "and requests."
-                        ),
-                        order=1,
-                    )
-                ],
-                requires_memory=True,
-                requires_verification=False,
-            )
+            return self._fallback_plan(query)
 
         try:
-            route = route_query(
-                query
-            )
-
+            route = route_query(query)
+            steps = self._build_steps(route)
         except Exception:
-            return self._fallback_plan(
-                query
-            )
-
-        steps = self._build_steps(
-            route
-        )
+            return self._fallback_plan(query)
 
         if not steps:
-            return self._fallback_plan(
-                query
-            )
+            return self._fallback_plan(query)
 
-        # ----------------------------------------------------
-        # LIVE WEB RESEARCH
-        # ----------------------------------------------------
-        # Every substantive user query gets a web-research
-        # support step. The core layer will execute it only
-        # when Tavily is configured. This prevents the old
-        # keyword-only behavior where ordinary questions never
-        # reached the live web.
-        if self._has_registered_skill("web_research"):
-            if not any(
-                step.skill_name == "web_research"
-                for step in steps
-            ):
-                steps.append(
-                    PlanStep(
-                        skill_name="web_research",
-                        purpose=(
-                            "Check current web information and "
-                            "use reliable live sources when available."
-                        ),
-                        order=len(steps) + 1,
-                    )
-                )
-
-        primary_skill = (
-            steps[0].skill_name
-        )
-
+        primary_skill = steps[0].skill_name
         return AgentPlan(
             query=query,
             primary_skill=primary_skill,
             steps=steps,
             requires_memory=True,
-            requires_verification=(
-                self._needs_verification(
-                    steps
-                )
-            ),
+            requires_verification=self._needs_verification(steps),
         )
 
     @staticmethod
-    def _has_registered_skill(skill_name: str) -> bool:
-        try:
-            skill = get_skill(skill_name)
-            return bool(
-                skill is not None
-                and getattr(skill, "enabled", False)
-            )
-        except Exception:
-            return False
-
-    def _build_steps(
-        self,
-        route: SkillRoute,
-    ) -> List[PlanStep]:
-
+    def _build_steps(route: SkillRoute) -> List[PlanStep]:
         steps = []
-
         order = 1
         used_skills = set()
 
-        # ----------------------------------------------------
-        # PRIMARY SKILL
-        # ----------------------------------------------------
-
-        primary = self._validate_skill(
-            getattr(
-                route,
-                "primary_skill",
-                None,
-            )
+        primary = AgentPlanner()._validate_skill(
+            getattr(route, "primary_skill", None)
         )
-
         if primary is not None:
-
             steps.append(
                 PlanStep(
                     skill_name=primary.name,
@@ -164,40 +68,13 @@ class AgentPlanner:
                     order=order,
                 )
             )
-
-            used_skills.add(
-                primary.name
-            )
-
+            used_skills.add(primary.name)
             order += 1
 
-        # ----------------------------------------------------
-        # SUPPORTING SKILLS
-        # ----------------------------------------------------
-
-        supporting_skills = getattr(
-            route,
-            "supporting_skills",
-            [],
-        )
-
-        for skill in supporting_skills:
-
-            validated = (
-                self._validate_skill(
-                    skill
-                )
-            )
-
-            if validated is None:
+        for skill in getattr(route, "supporting_skills", []) or []:
+            validated = AgentPlanner()._validate_skill(skill)
+            if validated is None or validated.name in used_skills:
                 continue
-
-            if (
-                validated.name
-                in used_skills
-            ):
-                continue
-
             steps.append(
                 PlanStep(
                     skill_name=validated.name,
@@ -205,70 +82,33 @@ class AgentPlanner:
                     order=order,
                 )
             )
-
-            used_skills.add(
-                validated.name
-            )
-
+            used_skills.add(validated.name)
             order += 1
 
         return steps
 
-    def _validate_skill(
-        self,
-        skill,
-    ):
-        """
-        Validate router output against
-        the central Skill Registry.
-        """
-
+    @staticmethod
+    def _validate_skill(skill):
         if skill is None:
             return None
 
-        skill_name = str(
-            getattr(
-                skill,
-                "name",
-                "",
-            )
-            or ""
-        ).strip()
-
+        skill_name = str(getattr(skill, "name", "") or "").strip()
         if not skill_name:
             return None
 
-        registered = get_skill(
-            skill_name
-        )
-
-        if registered is None:
-            return None
-
-        if not registered.enabled:
+        registered = get_skill(skill_name)
+        if registered is None or not registered.enabled:
             return None
 
         return registered
 
-    def _fallback_plan(
-        self,
-        query: str,
-    ) -> AgentPlan:
-
-        skill = get_skill(
-            self.default_skill
+    def _fallback_plan(self, query: str) -> AgentPlan:
+        skill = get_skill(self.default_skill)
+        purpose = (
+            skill.description
+            if skill is not None
+            else "Handle general questions and requests."
         )
-
-        if skill is None:
-
-            purpose = (
-                "Handle general questions "
-                "and requests."
-            )
-
-        else:
-
-            purpose = skill.description
 
         step = PlanStep(
             skill_name=self.default_skill,
@@ -276,35 +116,16 @@ class AgentPlanner:
             order=1,
         )
 
-        steps = [step]
-
-        if self._has_registered_skill("web_research"):
-            steps.append(
-                PlanStep(
-                    skill_name="web_research",
-                    purpose=(
-                        "Check current web information and "
-                        "use reliable live sources when available."
-                    ),
-                    order=2,
-                )
-            )
-
         return AgentPlan(
             query=query,
             primary_skill=self.default_skill,
-            steps=steps,
+            steps=[step],
             requires_memory=True,
-            requires_verification=(
-                len(steps) > 1
-            ),
+            requires_verification=False,
         )
 
     @staticmethod
-    def _needs_verification(
-        steps: List[PlanStep],
-    ) -> bool:
-
+    def _needs_verification(steps: List[PlanStep]) -> bool:
         verification_skills = {
             "web_research",
             "coding",
@@ -313,18 +134,9 @@ class AgentPlanner:
             "image_generation",
             "self_evolution",
         }
+        return any(step.skill_name in verification_skills for step in steps)
 
-        return any(
-            step.skill_name
-            in verification_skills
-            for step in steps
-        )
-
-    def explain_plan(
-        self,
-        plan: AgentPlan,
-    ) -> str:
-
+    def explain_plan(self, plan: AgentPlan) -> str:
         lines = [
             "AGENT PLAN",
             f"Primary skill: {plan.primary_skill}",
@@ -333,64 +145,26 @@ class AgentPlanner:
         ]
 
         for step in plan.steps:
-
             lines.append(
-                f"{step.order}. "
-                f"{step.skill_name} — "
-                f"{step.purpose}"
+                f"{step.order}. {step.skill_name} — {step.purpose}"
             )
 
         lines.extend(
             [
                 "",
-                "Memory: "
-                + (
-                    "YES"
-                    if plan.requires_memory
-                    else "NO"
-                ),
-                "Verification: "
-                + (
-                    "YES"
-                    if plan.requires_verification
-                    else "NO"
-                ),
+                "Memory: " + ("YES" if plan.requires_memory else "NO"),
+                "Verification: " + ("YES" if plan.requires_verification else "NO"),
             ]
         )
+        return "\n".join(lines)
 
-        return "\n".join(
-            lines
-        )
-
-
-# ============================================================
-# GLOBAL PLANNER
-# ============================================================
 
 planner = AgentPlanner()
 
 
-# ============================================================
-# PUBLIC API
-# ============================================================
-
-def create_plan(
-    query: str,
-) -> AgentPlan:
-
-    return planner.create_plan(
-        query
-    )
+def create_plan(query: str) -> AgentPlan:
+    return planner.create_plan(query)
 
 
-def explain_plan(
-    query: str,
-) -> str:
-
-    plan = create_plan(
-        query
-    )
-
-    return planner.explain_plan(
-        plan
-    )
+def explain_plan(query: str) -> str:
+    return planner.explain_plan(create_plan(query))
