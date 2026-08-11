@@ -13,7 +13,6 @@ from database.memory import load_conversation
 # ============================================================
 # SIDEBAR
 # ============================================================
-
 def render_sidebar():
 
     with st.sidebar:
@@ -61,7 +60,6 @@ def render_sidebar():
 # ============================================================
 # BRAND
 # ============================================================
-
 def render_brand():
 
     col1, col2 = st.columns(
@@ -86,7 +84,6 @@ def render_brand():
 # ============================================================
 # RECENT CONVERSATIONS
 # ============================================================
-
 def render_conversation_section():
 
     st.markdown("**Recent chats**")
@@ -184,7 +181,6 @@ def render_conversation_section():
 # ============================================================
 # DATABASE CHAT LOADER
 # ============================================================
-
 def _load_recent_conversations(
     search_query="",
     limit=30,
@@ -320,7 +316,7 @@ def _load_recent_conversations(
 
         if st.session_state.get(
             "show_provider_info",
-            True,
+            False,
         ):
             st.caption(
                 f"Database: {str(error)[:160]}"
@@ -372,7 +368,6 @@ def _load_recent_conversations(
 # ============================================================
 # OPEN CONVERSATION
 # ============================================================
-
 def _open_conversation(
     conversation_id,
 ):
@@ -417,7 +412,6 @@ def _open_conversation(
 # ============================================================
 # TITLE CLEANER
 # ============================================================
-
 def _clean_title(
     title,
 ):
@@ -435,7 +429,6 @@ def _clean_title(
 # ============================================================
 # AI PROVIDERS
 # ============================================================
-
 def render_ai_section():
 
     st.markdown("**AI model**")
@@ -496,7 +489,6 @@ def render_ai_section():
 # ============================================================
 # SERVICES
 # ============================================================
-
 def render_services_section():
 
     st.markdown("**Services**")
@@ -617,7 +609,6 @@ def render_status_row(
 # ============================================================
 # CURRENT CHAT
 # ============================================================
-
 def render_current_chat_section():
 
     st.markdown("**Current chat**")
@@ -666,7 +657,6 @@ def render_current_chat_section():
 # ============================================================
 # SETTINGS
 # ============================================================
-
 def render_settings_section():
 
     st.markdown("**Settings**")
@@ -675,7 +665,7 @@ def render_settings_section():
 
         st.session_state[
             "show_provider_info"
-        ] = True
+        ] = False
 
     if "enable_chat_memory" not in st.session_state:
 
@@ -719,7 +709,6 @@ def render_settings_section():
 # ============================================================
 # FOOTER
 # ============================================================
-
 def render_footer():
 
     st.caption(
@@ -734,7 +723,6 @@ def render_footer():
 # ============================================================
 # NEW CHAT
 # ============================================================
-
 def _reset_chat():
 
     st.session_state[
@@ -771,7 +759,6 @@ def _reset_chat():
 # ============================================================
 # CLEAR CURRENT CHAT
 # ============================================================
-
 def _clear_messages():
 
     st.session_state[
