@@ -21,6 +21,7 @@ Core rules:
 - Use supplied conversation memory when relevant.
 - Use supplied file context when relevant.
 - Use supplied web-search context when relevant.
+- Use supplied current time context when relevant.
 - Never reveal API keys, passwords, database URLs, tokens,
   environment variables, or other secrets.
 - Do not claim that an action was completed unless it actually
@@ -115,12 +116,22 @@ def build_web_context(
     return str(web_context)
 
 
+def build_time_context(
+    time_context,
+):
+    if not time_context:
+        return "No current time context provided."
+
+    return str(time_context)
+
+
 def build_agent_prompt(
     user_input,
     messages=None,
     memory_context=None,
     file_context=None,
     web_context=None,
+    time_context=None,
 ):
     conversation = build_conversation_context(
         messages or []
@@ -136,6 +147,10 @@ def build_agent_prompt(
 
     web = build_web_context(
         web_context
+    )
+
+    time = build_time_context(
+        time_context
     )
 
     return f"""
@@ -164,6 +179,12 @@ WEB SEARCH CONTEXT
 ============================================================
 
 {web}
+
+============================================================
+CURRENT TIME CONTEXT
+============================================================
+
+{time}
 
 ============================================================
 LATEST USER REQUEST
