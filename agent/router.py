@@ -276,6 +276,9 @@ class AgentRouter:
             "live information",
             "current price",
             "current weather",
+            "weather",
+            "mausam",
+            "forecast",
             "weather today",
             "latest update",
         )
