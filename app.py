@@ -8,6 +8,11 @@ from ui.chat import initialize_chat_state, render_chat
 from ui.sidebar import render_sidebar
 from ui.styles import get_app_css
 
+from providers.video.bootstrap import (
+    get_video_system_status,
+    get_ready_video_providers,
+    initialize_video_system,
+)
 
 # ============================================================
 # STREAMLIT PAGE CONFIG
@@ -20,7 +25,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
 # ============================================================
 # GLOBAL SERVER STATE
 # ============================================================
@@ -29,16 +33,15 @@ _TELEGRAM_BOT = None
 _TELEGRAM_STARTED = False
 _TELEGRAM_ERROR = ""
 
-
 # ============================================================
 # DATABASE
 # ============================================================
+
 
 @st.cache_resource
 def initialize_server_database():
     """
     Initialize database once per Streamlit server process.
-    This does not depend on browser/session state.
     """
 
     try:
@@ -53,13 +56,11 @@ def initialize_server_database():
 # TELEGRAM
 # ============================================================
 
+
 @st.cache_resource
 def initialize_server_telegram():
     """
     Start Telegram bot once per Streamlit server process.
-
-    IMPORTANT:
-    Telegram must NOT depend on st.session_state.
     """
 
     global _TELEGRAM_BOT
@@ -95,18 +96,44 @@ def initialize_server_telegram():
 
 
 # ============================================================
+# VIDEO SYSTEM
+# ============================================================
+
+
+@st.cache_resource
+def initialize_server_video():
+    """
+    Initialize the central video-generation system once
+    per Streamlit server process.
+    """
+
+    try:
+        manager = initialize_video_system()
+        return manager, True, ""
+
+    except Exception as error:
+        return None, False, str(error)
+
+
+# ============================================================
 # APP INITIALIZATION
 # ============================================================
+
 
 def initialize_app():
 
     initialize_chat_state()
+
+    # --------------------------------------------------------
+    # DATABASE
+    # --------------------------------------------------------
 
     database_ok, database_error = (
         initialize_server_database()
     )
 
     if not database_ok:
+
         st.session_state[
             "database_initialized"
         ] = False
@@ -116,6 +143,7 @@ def initialize_app():
         ] = database_error
 
     else:
+
         st.session_state[
             "database_initialized"
         ] = True
@@ -123,6 +151,10 @@ def initialize_app():
         st.session_state[
             "database_error"
         ] = ""
+
+    # --------------------------------------------------------
+    # TELEGRAM
+    # --------------------------------------------------------
 
     bot, telegram_ok, telegram_error = (
         initialize_server_telegram()
@@ -140,10 +172,31 @@ def initialize_app():
         "telegram_bot"
     ] = bot
 
+    # --------------------------------------------------------
+    # VIDEO
+    # --------------------------------------------------------
+
+    video_manager, video_ok, video_error = (
+        initialize_server_video()
+    )
+
+    st.session_state[
+        "video_system_initialized"
+    ] = video_ok
+
+    st.session_state[
+        "video_system_error"
+    ] = video_error
+
+    st.session_state[
+        "video_manager"
+    ] = video_manager
+
 
 # ============================================================
 # SYSTEM STATUS
 # ============================================================
+
 
 def render_system_status():
 
@@ -162,6 +215,20 @@ def render_system_status():
         False,
     )
 
+    video_error = st.session_state.get(
+        "video_system_error",
+        "",
+    )
+
+    video_initialized = st.session_state.get(
+        "video_system_initialized",
+        False,
+    )
+
+    # --------------------------------------------------------
+    # DATABASE
+    # --------------------------------------------------------
+
     if database_error:
 
         st.warning(
@@ -169,6 +236,10 @@ def render_system_status():
             "Chat memory will not work until "
             "DATABASE_URL is configured correctly."
         )
+
+    # --------------------------------------------------------
+    # TELEGRAM
+    # --------------------------------------------------------
 
     if telegram_error:
 
@@ -183,10 +254,116 @@ def render_system_status():
             "Telegram Bot: Connected"
         )
 
+    # --------------------------------------------------------
+    # VIDEO SYSTEM
+    # --------------------------------------------------------
+
+    if video_error:
+
+        st.warning(
+            "Video system initialization failed: "
+            + video_error
+        )
+
+        return
+
+    if not video_initialized:
+
+        st.warning(
+            "Video system is not initialized."
+        )
+
+        return
+
+    try:
+
+        status = get_video_system_status()
+
+        ready_providers = (
+            get_ready_video_providers()
+        )
+
+        provider_count = len(
+            ready_providers
+        )
+
+        st.caption(
+            f"Video Providers: {provider_count} Ready"
+        )
+
+        with st.expander(
+            "Video Provider Status",
+            expanded=False,
+        ):
+
+            providers = status.get(
+                "providers",
+                {},
+            )
+
+            if not providers:
+
+                st.info(
+                    "No video providers are registered."
+                )
+
+            else:
+
+                for name, data in providers.items():
+
+                    available = bool(
+                        data.get(
+                            "available",
+                            False,
+                        )
+                    )
+
+                    configured = bool(
+                        data.get(
+                            "configured",
+                            False,
+                        )
+                    )
+
+                    enabled = bool(
+                        data.get(
+                            "enabled",
+                            False,
+                        )
+                    )
+
+                    if available:
+
+                        state = "Connected"
+
+                    elif not enabled:
+
+                        state = "Disabled"
+
+                    elif not configured:
+
+                        state = "Not configured"
+
+                    else:
+
+                        state = "Unavailable"
+
+                    st.write(
+                        f"**{name}** — {state}"
+                    )
+
+    except Exception as error:
+
+        st.warning(
+            "Unable to read video provider status: "
+            + str(error)
+        )
+
 
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
 
@@ -195,9 +372,7 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # IMPORTANT:
-    # Server-level initialization happens here.
-    # It does NOT depend on browser session.
+    # Server-level initialization
     initialize_app()
 
     render_sidebar()
