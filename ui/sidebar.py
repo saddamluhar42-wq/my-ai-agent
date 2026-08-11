@@ -6,6 +6,9 @@ from config import (
     get_config_status,
 )
 
+from database.connection import execute
+from database.memory import load_conversation
+
 
 # ============================================================
 # SIDEBAR
@@ -70,6 +73,7 @@ def render_brand():
         st.markdown("### 🤖")
 
     with col2:
+
         st.markdown(
             f"**{APP_NAME}**"
         )
@@ -80,56 +84,352 @@ def render_brand():
 
 
 # ============================================================
-# CONVERSATIONS
+# RECENT CONVERSATIONS
 # ============================================================
 
 def render_conversation_section():
 
     st.markdown("**Recent chats**")
 
-    messages = st.session_state.get(
-        "messages",
-        [],
+    search_query = st.session_state.get(
+        "chat_search_query",
+        "",
+    ).strip()
+
+    conversations = _load_recent_conversations(
+        search_query=search_query,
+        limit=30,
     )
 
-    if not messages:
-        st.caption("No conversations yet.")
+    if not conversations:
+
+        if search_query:
+            st.caption(
+                "No matching conversations."
+            )
+        else:
+            st.caption(
+                "No conversations yet."
+            )
+
         return
 
-    user_messages = [
-        message
-        for message in messages
-        if message.get("role") == "user"
-    ]
+    current_conversation_id = (
+        st.session_state.get(
+            "conversation_id"
+        )
+    )
 
-    if user_messages:
+    for conversation in conversations:
 
-        latest = user_messages[-1].get(
-            "content",
-            "",
+        conversation_id = conversation[
+            "id"
+        ]
+
+        title = conversation[
+            "title"
+        ]
+
+        message_count = conversation[
+            "message_count"
+        ]
+
+        source = conversation[
+            "source"
+        ]
+
+        display_title = _clean_title(
+            title
         )
 
-        if latest:
+        if len(display_title) > 30:
+            display_title = (
+                display_title[:30].rstrip()
+                + "..."
+            )
 
-            title = latest.strip()
+        if conversation_id == current_conversation_id:
+            prefix = "●"
+        else:
+            prefix = "○"
 
-            if len(title) > 34:
-                title = (
-                    title[:34].rstrip()
-                    + "..."
-                )
+        if source == "telegram":
+            icon = "✈️"
+        else:
+            icon = "💬"
 
-            if st.button(
-                f"💬  {title}",
-                use_container_width=True,
-                key="current_conversation_button",
-            ):
-                st.session_state[
-                    "scroll_to_bottom"
-                ] = True
+        label = (
+            f"{prefix} {icon}  "
+            f"{display_title}"
+        )
 
-    else:
-        st.caption("Current chat")
+        if message_count:
+            label += (
+                f"  ·  {message_count}"
+            )
+
+        if st.button(
+            label,
+            use_container_width=True,
+            key=(
+                "conversation_"
+                f"{conversation_id}"
+            ),
+        ):
+            _open_conversation(
+                conversation_id
+            )
+
+
+# ============================================================
+# DATABASE CHAT LOADER
+# ============================================================
+
+def _load_recent_conversations(
+    search_query="",
+    limit=30,
+):
+
+    safe_limit = max(
+        1,
+        min(int(limit), 100),
+    )
+
+    search_query = (
+        search_query.strip()
+        if search_query
+        else ""
+    )
+
+    try:
+
+        if search_query:
+
+            rows = execute(
+                f"""
+                SELECT
+                    c.id,
+                    c.title,
+                    c.created_at,
+                    c.updated_at,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM messages m
+                        WHERE m.conversation_id = c.id
+                    ) AS message_count,
+
+                    u.external_id,
+
+                    COALESCE(
+                        (
+                            SELECT m2.content
+                            FROM messages m2
+                            WHERE
+                                m2.conversation_id = c.id
+                                AND m2.role = 'user'
+                            ORDER BY
+                                m2.created_at ASC,
+                                m2.id ASC
+                            LIMIT 1
+                        ),
+                        c.title
+                    ) AS first_message
+
+                FROM conversations c
+
+                INNER JOIN users u
+                    ON u.id = c.user_id
+
+                WHERE
+                    c.title ILIKE %s
+
+                    OR EXISTS (
+                        SELECT 1
+                        FROM messages ms
+                        WHERE
+                            ms.conversation_id = c.id
+                            AND ms.content ILIKE %s
+                    )
+
+                ORDER BY
+                    c.updated_at DESC,
+                    c.id DESC
+
+                LIMIT {safe_limit};
+                """,
+                (
+                    f"%{search_query}%",
+                    f"%{search_query}%",
+                ),
+                fetch="all",
+            )
+
+        else:
+
+            rows = execute(
+                f"""
+                SELECT
+                    c.id,
+                    c.title,
+                    c.created_at,
+                    c.updated_at,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM messages m
+                        WHERE m.conversation_id = c.id
+                    ) AS message_count,
+
+                    u.external_id,
+
+                    COALESCE(
+                        (
+                            SELECT m2.content
+                            FROM messages m2
+                            WHERE
+                                m2.conversation_id = c.id
+                                AND m2.role = 'user'
+                            ORDER BY
+                                m2.created_at ASC,
+                                m2.id ASC
+                            LIMIT 1
+                        ),
+                        c.title
+                    ) AS first_message
+
+                FROM conversations c
+
+                INNER JOIN users u
+                    ON u.id = c.user_id
+
+                ORDER BY
+                    c.updated_at DESC,
+                    c.id DESC
+
+                LIMIT {safe_limit};
+                """,
+                fetch="all",
+            )
+
+    except Exception as error:
+
+        st.caption(
+            "Unable to load chat history."
+        )
+
+        if st.session_state.get(
+            "show_provider_info",
+            True,
+        ):
+            st.caption(
+                f"Database: {str(error)[:160]}"
+            )
+
+        return []
+
+    conversations = []
+
+    for row in rows:
+
+        external_id = row[5] or ""
+
+        if external_id.startswith(
+            "telegram:"
+        ):
+            source = "telegram"
+        else:
+            source = "web"
+
+        first_message = (
+            row[6]
+            or row[1]
+            or "New Conversation"
+        )
+
+        title = (
+            row[1]
+            or first_message
+            or "New Conversation"
+        )
+
+        conversations.append(
+            {
+                "id": row[0],
+                "title": title,
+                "created_at": row[2],
+                "updated_at": row[3],
+                "message_count": row[4] or 0,
+                "external_id": external_id,
+                "first_message": first_message,
+                "source": source,
+            }
+        )
+
+    return conversations
+
+
+# ============================================================
+# OPEN CONVERSATION
+# ============================================================
+
+def _open_conversation(
+    conversation_id,
+):
+
+    try:
+
+        messages = load_conversation(
+            conversation_id,
+            limit=100,
+        )
+
+        st.session_state[
+            "conversation_id"
+        ] = conversation_id
+
+        st.session_state[
+            "messages"
+        ] = messages
+
+        st.session_state[
+            "clarification_answer"
+        ] = ""
+
+        st.session_state[
+            "clarification_question"
+        ] = ""
+
+        st.session_state[
+            "pending_image_prompt"
+        ] = None
+
+        st.rerun()
+
+    except Exception as error:
+
+        st.error(
+            "Could not open conversation: "
+            + str(error)
+        )
+
+
+# ============================================================
+# TITLE CLEANER
+# ============================================================
+
+def _clean_title(
+    title,
+):
+
+    title = str(
+        title or ""
+    ).strip()
+
+    if not title:
+        return "New Conversation"
+
+    return title
 
 
 # ============================================================
@@ -150,17 +450,20 @@ def render_ai_section():
         "Anthropic",
     ]
 
-    current_provider = st.session_state.get(
-        "preferred_provider",
-        "Auto",
+    current_provider = (
+        st.session_state.get(
+            "preferred_provider",
+            "Auto",
+        )
     )
 
     if current_provider not in provider_options:
-        current_provider = "Auto"
 
         st.session_state[
             "preferred_provider"
         ] = "Auto"
+
+        current_provider = "Auto"
 
     st.selectbox(
         "Provider",
@@ -178,11 +481,13 @@ def render_ai_section():
     )
 
     if selected == "Auto":
+
         st.caption(
             "Automatic provider selection"
         )
 
     else:
+
         st.caption(
             f"Using {selected}"
         )
@@ -340,6 +645,7 @@ def render_current_chat_section():
             use_container_width=True,
             key="sidebar_clear_files",
         ):
+
             st.session_state[
                 "uploaded_files"
             ] = []
@@ -365,23 +671,20 @@ def render_settings_section():
 
     st.markdown("**Settings**")
 
-    # --------------------------------------------------------
-    # IMPORTANT:
-    # Initialize session-state values BEFORE creating widgets.
-    # Do NOT use value= together with a key that already exists.
-    # --------------------------------------------------------
-
     if "show_provider_info" not in st.session_state:
+
         st.session_state[
             "show_provider_info"
         ] = True
 
     if "enable_chat_memory" not in st.session_state:
+
         st.session_state[
             "enable_chat_memory"
         ] = True
 
     if "confirm_image_generation" not in st.session_state:
+
         st.session_state[
             "confirm_image_generation"
         ] = True
@@ -419,7 +722,9 @@ def render_settings_section():
 
 def render_footer():
 
-    st.caption("My AI Agent")
+    st.caption(
+        "My AI Agent"
+    )
 
     st.caption(
         "Streamlit • PostgreSQL • Multi-AI"
@@ -427,7 +732,7 @@ def render_footer():
 
 
 # ============================================================
-# RESET CHAT
+# NEW CHAT
 # ============================================================
 
 def _reset_chat():
