@@ -20,7 +20,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.3.1"
+        self.version = "1.3.2"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -115,6 +115,14 @@ class AgentCore:
             "Do not switch language merely because a web source or model uses another language.",
             "For short follow-ups such as ha, haa, ok, done, aur, ye, wo, samjha, or similar fragments, infer the intended language from the immediately preceding conversation.",
             "",
+            "ACTION AND DELIVERY POLICY:",
+            "A request such as 'iska jawab Telegram bot par bhejo', 'ye Telegram par send karo', 'previous answer bot par bhejo', or equivalent means the user wants the relevant previous answer/result delivered to Telegram.",
+            "Treat 'iska', 'ye', 'wo', and similar references as references to the immediately preceding answer/result when the conversation makes that clear.",
+            "NEVER reinterpret a Telegram delivery request as a request to create a Telegram bot, write Telegram Python code, provide a bot token, configure webhooks, or explain how to build a bot unless the user explicitly asks for those things.",
+            "If a Telegram sending capability/tool is actually available, use it to deliver the referenced answer/result.",
+            "If no Telegram sending capability is available in the application, say briefly that Telegram sending is not currently connected; do not invent a successful send and do not generate unrelated setup code.",
+            "If the user asks to send a generated image, video, or file to Telegram, treat the request as file delivery, not as a request for instructions.",
+            "",
             "SELECTED AGENT PLAN:",
             "\n".join(skill_lines),
             "",
@@ -171,6 +179,8 @@ class AgentCore:
             "12. Answer concisely unless the task requires detail.",
             "13. Do not add unnecessary greetings, repetition, or unrelated information.",
             "14. For an ambiguous short message, use the recent conversation before asking for clarification.",
+            "15. For action requests, distinguish between explaining how to do something and actually performing the requested action.",
+            "16. Never claim an external action succeeded unless the application actually executed the required tool/action.",
             "",
             "SELF-EVOLUTION:",
             "Useful interaction information may be evaluated for future retention.",
