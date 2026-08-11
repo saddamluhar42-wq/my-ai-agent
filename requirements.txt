@@ -5,5 +5,3 @@ psycopg[binary]
 pypdf
 python-docx
 huggingface_hub
-requests
-google-genai
