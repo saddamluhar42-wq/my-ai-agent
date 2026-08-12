@@ -11,21 +11,38 @@ from ai.agent import AgentError, generate_image
 from config import (
     ANTHROPIC_API_KEY,
     CEREBRAS_API_KEY,
+    DEEPSEEK_API_KEY,
     GEMINI_API_KEY,
     GROQ_API_KEY,
+    HF_TOKEN,
+    KIMI_API_KEY,
     MISTRAL_API_KEY,
+    NVIDIA_IMAGE_1,
+    OPENAI_API_KEY,
     OPENROUTER_API_KEY,
+    XAI_API_KEY,
+    YOU_API_KEY,
+    ANTHROPIC_MODEL,
+    CEREBRAS_MODEL,
+    DEEPSEEK_MODEL,
+    GEMINI_MODEL,
+    GROQ_MODEL,
+    HF_IMAGE_MODEL,
+    KIMI_MODEL,
+    MISTRAL_MODEL,
+    NVIDIA_IMAGE_MODEL,
+    OPENAI_MODEL,
+    OPENROUTER_MODEL,
+    XAI_MODEL,
+    YOU_MODEL,
     get_configured_video_providers,
 )
-from providers.video.bootstrap import (
-    get_ready_video_providers,
-    initialize_video_system,
-)
+from providers.video.bootstrap import get_ready_video_providers, initialize_video_system
 from providers.video.manager import generate_video
 
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 MAX_FILE_SIZE_MB = 20
 
 st.set_page_config(
@@ -64,24 +81,20 @@ def safe_read_file(uploaded_file) -> str:
     raw = uploaded_file.getvalue()
     if len(raw) > MAX_FILE_SIZE_MB * 1024 * 1024:
         raise ValueError(f"File exceeds {MAX_FILE_SIZE_MB} MB limit.")
-
     if name.endswith(".pdf"):
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(raw))
         return "\n\n".join(page.extract_text() or "" for page in reader.pages)
-
     if name.endswith(".docx"):
         from docx import Document
         doc = Document(io.BytesIO(raw))
         return "\n".join(p.text for p in doc.paragraphs)
-
     return raw.decode("utf-8", errors="replace")
 
 
 def process_files(files) -> None:
     if not files:
         return
-
     chunks = []
     names = []
     for uploaded in files:
@@ -91,7 +104,6 @@ def process_files(files) -> None:
             chunks.append(f"FILE: {uploaded.name}\n{text[:50000]}")
         except Exception as exc:
             st.error(f"{uploaded.name}: {exc}")
-
     if chunks:
         st.session_state["file_context"] = "\n\n---\n\n".join(chunks)
         st.session_state["uploaded_names"] = names
@@ -101,14 +113,21 @@ def clean_text(value: object) -> str:
     return str(value or "").strip()
 
 
-def model_connection_status() -> list[tuple[str, bool]]:
+def model_connection_status() -> list[tuple[str, bool, str]]:
     return [
-        ("Gemini", bool(GEMINI_API_KEY)),
-        ("OpenRouter", bool(OPENROUTER_API_KEY)),
-        ("Groq", bool(GROQ_API_KEY)),
-        ("Cerebras", bool(CEREBRAS_API_KEY)),
-        ("Mistral", bool(MISTRAL_API_KEY)),
-        ("Anthropic", bool(ANTHROPIC_API_KEY)),
+        ("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL),
+        ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL),
+        ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL),
+        ("Groq", bool(GROQ_API_KEY), GROQ_MODEL),
+        ("Cerebras", bool(CEREBRAS_API_KEY), CEREBRAS_MODEL),
+        ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL),
+        ("Mistral", bool(MISTRAL_API_KEY), MISTRAL_MODEL),
+        ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL),
+        ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL),
+        ("xAI", bool(XAI_API_KEY), XAI_MODEL),
+        ("You.com", bool(YOU_API_KEY), YOU_MODEL),
+        ("Hugging Face", bool(HF_TOKEN), HF_IMAGE_MODEL),
+        ("NVIDIA", bool(NVIDIA_IMAGE_1), NVIDIA_IMAGE_MODEL),
     ]
 
 
@@ -116,7 +135,6 @@ def add_history_entry(prompt: str) -> None:
     prompt = clean_text(prompt)
     if not prompt:
         return
-
     history = st.session_state.setdefault("history", [])
     history[:] = [item for item in history if item != prompt]
     history.insert(0, prompt)
@@ -128,7 +146,6 @@ def render_history() -> None:
     if not history:
         st.caption("No conversations yet")
         return
-
     for index, item in enumerate(history):
         label = item if len(item) <= 42 else item[:39].rstrip() + "..."
         if st.button(label, key=f"history_{index}", use_container_width=True):
@@ -137,21 +154,25 @@ def render_history() -> None:
 
 
 def render_model_connections() -> None:
+    st.caption("Render Environment Variables")
     connected = 0
-    for name, configured in model_connection_status():
+    for name, configured, model in model_connection_status():
         if configured:
             connected += 1
-            st.success(f"✓ {name} — connected")
+            st.success(f"✓ {name}  •  {model}")
         else:
             st.caption(f"○ {name} — not connected")
 
+    st.divider()
+    st.caption("Video Models")
     video_providers = get_configured_video_providers()
     if video_providers:
-        st.caption("Video: " + ", ".join(provider.title() for provider in video_providers))
+        for provider in video_providers:
+            st.success(f"✓ {provider.title()} — configured")
     else:
-        st.caption("Video — no provider connected")
+        st.caption("○ No video provider connected")
 
-    st.caption(f"{connected}/6 text models connected")
+    st.caption(f"{connected}/{len(model_connection_status())} model connections configured")
 
 
 def render_sidebar(video_error: str) -> None:
@@ -175,7 +196,10 @@ def render_sidebar(video_error: str) -> None:
 
         st.divider()
         st.subheader("AI Provider")
-        providers = ["Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral", "Anthropic"]
+        providers = [
+            "Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral",
+            "Anthropic", "DeepSeek", "Kimi", "OpenAI", "xAI", "You.com",
+        ]
         current_provider = st.session_state.get("preferred_provider", "Auto")
         provider = st.selectbox(
             "Text provider",
@@ -212,7 +236,7 @@ def render_sidebar(video_error: str) -> None:
             st.caption("Loaded: " + ", ".join(st.session_state["uploaded_names"]))
 
         st.divider()
-        st.caption("Render Free can sleep after inactivity. The app itself no longer depends on PostgreSQL for chat responses.")
+        st.caption("Render Free can sleep after inactivity. API keys remain in Render Environment Variables and are never displayed.")
 
 
 def render_header() -> None:
@@ -242,13 +266,7 @@ def render_messages() -> None:
                 if path.exists():
                     st.video(str(path))
                     try:
-                        st.download_button(
-                            "Download video",
-                            path.read_bytes(),
-                            file_name=path.name,
-                            mime="video/mp4",
-                            key=f"download_{path.name}",
-                        )
+                        st.download_button("Download video", path.read_bytes(), file_name=path.name, mime="video/mp4", key=f"download_{path.name}")
                     except Exception:
                         pass
                 else:
@@ -286,34 +304,15 @@ def generate_video_request(prompt: str) -> None:
             output_path = output_dir / f"video_{os.urandom(8).hex()}.mp4"
             provider = None if st.session_state.get("preferred_provider", "Auto") == "Auto" else st.session_state["preferred_provider"].lower()
             try:
-                result = generate_video(
-                    prompt=prompt,
-                    provider=provider,
-                    output_path=str(output_path),
-                    fallback=True,
-                )
+                result = generate_video(prompt=prompt, provider=provider, output_path=str(output_path), fallback=True)
                 if not isinstance(result, dict) or not result.get("success"):
                     raise AgentError(result.get("error", "Video generation failed.") if isinstance(result, dict) else "Invalid video result.")
                 final_path = Path(result.get("output_path", output_path))
                 if not final_path.exists():
                     raise AgentError("Video provider reported success but output file was not found.")
-                append_message(
-                    "assistant",
-                    "",
-                    type="video",
-                    video_path=str(final_path),
-                    provider=result.get("provider", provider or "Auto"),
-                    model=result.get("model", ""),
-                    task_id=result.get("task_id"),
-                )
+                append_message("assistant", "", type="video", video_path=str(final_path), provider=result.get("provider", provider or "Auto"), model=result.get("model", ""), task_id=result.get("task_id"))
                 st.video(str(final_path))
-                st.download_button(
-                    "Download video",
-                    final_path.read_bytes(),
-                    file_name=final_path.name,
-                    mime="video/mp4",
-                    key=f"download_now_{final_path.name}",
-                )
+                st.download_button("Download video", final_path.read_bytes(), file_name=final_path.name, mime="video/mp4", key=f"download_now_{final_path.name}")
             except Exception as exc:
                 error = f"Video generation failed: {exc}"
                 append_message("assistant", error)
@@ -324,16 +323,13 @@ def handle_prompt(prompt: str) -> None:
     prompt = clean_text(prompt)
     if not prompt:
         return
-
     add_history_entry(prompt)
     lowered = prompt.lower()
     image_words = ("generate image", "create image", "make image", "image banao", "image bana do", "photo banao", "picture banao")
     video_words = ("generate video", "create video", "make video", "video banao", "video bana do", "video generate")
-
     if any(word in lowered for word in image_words):
         generate_image_request(prompt)
         return
-
     if any(word in lowered for word in video_words):
         generate_video_request(prompt)
         return
@@ -358,12 +354,7 @@ def handle_prompt(prompt: str) -> None:
                 answer = clean_text(result.answer)
                 if not answer:
                     raise AgentError("Agent returned an empty response.")
-                append_message(
-                    "assistant",
-                    answer,
-                    provider=result.provider,
-                    model=(result.metadata or {}).get("model", ""),
-                )
+                append_message("assistant", answer, provider=result.provider, model=(result.metadata or {}).get("model", ""))
                 st.markdown(answer)
             except Exception as exc:
                 error = f"AI Agent error: {exc}"
@@ -383,7 +374,6 @@ def main() -> None:
     render_sidebar(video_error)
     render_header()
     render_messages()
-
     prompt = st.chat_input("Message My AI Agent...")
     if prompt:
         handle_prompt(prompt)
