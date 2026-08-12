@@ -19,7 +19,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.5.2"
+        self.version = "1.5.3"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -30,6 +30,20 @@ class AgentCore:
         context = context or {}
         recent_messages = context.get("recent_messages", [])
 
+        # IMPORTANT ROUTING ORDER:
+        # Explicit timed tasks must be persisted BEFORE the generic Telegram
+        # delivery intent is checked. Otherwise a request such as
+        # "3:15 pm ko Telegram par message karna..." is incorrectly treated
+        # as "send the previous answer now".
+        scheduled_result = try_create_web_task(
+            query=query,
+            user_id=context.get("user_id"),
+        )
+        if scheduled_result is not None:
+            return scheduled_result
+
+        # Only non-scheduled Telegram requests reach the immediate-delivery
+        # handler, e.g. "previous answer Telegram par bhej do".
         if is_delivery_request(query):
             sent, message = deliver_previous_answer(recent_messages)
             return ExecutionResult(
@@ -38,13 +52,6 @@ class AgentCore:
                 skill="telegram_delivery",
                 metadata={"action": "telegram_delivery", "sent": sent},
             )
-
-        scheduled_result = try_create_web_task(
-            query=query,
-            user_id=context.get("user_id"),
-        )
-        if scheduled_result is not None:
-            return scheduled_result
 
         plan = create_plan(query)
         user_id = context.get("user_id")
@@ -75,10 +82,6 @@ class AgentCore:
         )
 
         try:
-            # IMPORTANT: pass the provider selected in the Streamlit UI.
-            # Previously this value was added to the prompt but never passed
-            # to the AI routing layer, so Auto/Gemini/etc. selection had no
-            # effect and a slow/failed first provider could delay the reply.
             result = generate(prompt=prompt, preferred_provider=preferred_provider)
         except AgentError:
             raise
@@ -223,10 +226,6 @@ class AgentCore:
 
 
 _core = AgentCore()
-
-# The Streamlit process is the long-running worker in the Render deployment.
-# Start the persistent scheduler here so scheduled tasks continue running
-# even when the browser is closed or no new chat message arrives.
 scheduler.start()
 
 
