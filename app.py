@@ -26,7 +26,7 @@ from providers.video.bootstrap import initialize_video_system
 from providers.video.manager import generate_video
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 MAX_FILE_SIZE_MB = 20
 
 TIME_LOCATIONS = {
@@ -102,13 +102,6 @@ def is_time_query(prompt: str) -> bool:
     text = prompt.lower()
     phrases = ("time kya", "time bata", "kitne baje", "kitna time", "abhi time", "current time", "local time", "what time", "tell me the time", "time now", "samay kya", "samay bata", "waqt kya", "waqt bata", "clock time", "abhi kitne baje")
     return any(phrase in text for phrase in phrases) or ("time" in text and any(word in text for word in ("abhi", "current", "local", "now")))
-
-
-def is_image_query(prompt: str) -> bool:
-    text = clean_text(prompt).lower()
-    image_terms = ("image", "photo", "picture", "photograph", "pic", "tasveer", "तस्वीर", "फोटो", "चित्र")
-    generation_terms = ("generate", "generation", "create", "make", "banao", "bana do", "banado", "bana de", "bana dena", "chahiye", "tayyar karo", "tayyar kar", "बनाओ", "बना दो", "बनाना", "बना दे", "बना देना", "चाहिए", "तैयार करो", "तैयार कर")
-    return any(term in text for term in image_terms) and any(term in text for term in generation_terms)
 
 
 def is_video_query(prompt: str) -> bool:
@@ -306,9 +299,13 @@ def render_messages() -> None:
 
 
 def generate_image_request(prompt: str) -> None:
-    append_message("user", prompt)
+    prompt = clean_text(prompt)
+    if not prompt:
+        st.warning("Image prompt empty hai.")
+        return
+    append_message("user", prompt, type="image_prompt")
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(f"🖼️ **Image request:** {prompt}")
     with st.chat_message("assistant"):
         with st.spinner("Generating image..."):
             try:
@@ -325,6 +322,18 @@ def generate_image_request(prompt: str) -> None:
                 error = f"Image generation failed: {exc}"
                 append_message("assistant", error)
                 st.error(error)
+
+
+def render_image_generator() -> None:
+    with st.popover("🖼️ Generate Image", use_container_width=True):
+        st.markdown("### Image Generator")
+        st.caption("Image sirf yahan se generate hogi. Normal chat mein image/photo/picture words hone par image generate nahi hogi.")
+        image_prompt = st.text_area("Image prompt", placeholder="Example: cinematic realistic village house in Kutch at golden hour...", height=110, key="image_prompt_input")
+        if st.button("Generate Image", type="primary", use_container_width=True, key="generate_image_button"):
+            if clean_text(image_prompt):
+                generate_image_request(image_prompt)
+            else:
+                st.warning("Pehle image prompt likho.")
 
 
 def generate_video_request(prompt: str) -> None:
@@ -391,9 +400,6 @@ def handle_prompt(prompt: str) -> None:
     prompt = clean_text(prompt)
     if not prompt:
         return
-    if is_image_query(prompt):
-        generate_image_request(prompt)
-        return
     if is_video_query(prompt):
         generate_video_request(prompt)
         return
@@ -440,6 +446,7 @@ def main() -> None:
     boot_video_system()
     render_sidebar()
     render_header()
+    render_image_generator()
     render_messages()
     render_time_location_popup()
     if st.session_state.get("pending_time_location"):
