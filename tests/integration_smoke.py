@@ -1,79 +1,48 @@
-"""Offline integration smoke test for the Ultra Legend foundation."""
+"""Offline smoke test for the current lightweight agent architecture.
+
+This test intentionally avoids API calls, databases, external plugin execution,
+and provider credentials. It validates that the modules used by the deployed
+Streamlit app can be imported and that their core contracts are intact.
+"""
 from __future__ import annotations
-
-import tempfile
-from pathlib import Path
-
-from agent.model_ensemble import ModelEnsemble, ModelProfile
-from agent.self_evaluation import RecoveryController, SelfEvaluator
-from agent.tool_orchestrator import PluginOrchestrator, ToolRegistry, ToolSpec
-from core.ultra_legend import UltraLegend
-from evaluation.continuous_eval import ContinuousEvaluator, EvalCase, RegressionGate
-from evaluation.stress_suite import StressCase, StressSuite
-from knowledge.cross_domain import CrossDomainReasoner, GraphEdge
-from knowledge.multimodal_intelligence import MultimodalIntelligence
-from memory.intelligence import MemoryIntelligence
-from memory.long_term import LongTermMemory, MemoryRecord
-from ops.production_hardening import OperationBudget, ProductionHealth
-from research.source_verification import ResearchSource, SourceVerifier
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        db = str(Path(tmp) / "memory.sqlite3")
-        memory = LongTermMemory(db)
-        assert memory.remember(MemoryRecord("Python testing workflow", category="engineering", importance=0.9))
-        assert memory.count() == 1
-        assert memory.search("Python testing")
-        intelligence = MemoryIntelligence(db)
-        assert intelligence.rank("Python testing", limit=1)[0].action == "retrieve"
+    import streamlit
 
-        budget = OperationBudget()
-        budget.consume_tool()
-        assert ProductionHealth(db).check().healthy
+    from agent.core import AgentCore, ExecutionResult, get_agent_core, run_agent
+    from agent.task_scheduler import DEFAULT_TIMEZONE
+    from database.chat_history import list_recent_chats, load_chat, save_chat
+    from database.tasks import list_tasks
+    from plugins.coder import plugin as coder_plugin
+    from plugins.manager import fetch_manifest, plugin_payload
+    from plugins.router import router
 
-    graph = [
-        GraphEdge("python", "used_for", "automation", 0.9, "software"),
-        GraphEdge("automation", "supports", "research", 0.8, "research"),
-    ]
-    assert CrossDomainReasoner().connect("python", "research", graph)
+    assert streamlit.__version__
+    assert isinstance(get_agent_core(), AgentCore)
+    assert isinstance(run_agent.__name__, str)
+    assert ExecutionResult(answer="ok").success is True
+    assert DEFAULT_TIMEZONE
 
-    multimodal = MultimodalIntelligence()
-    evidence = multimodal.normalize([
-        {"modality": "text", "content": "entity value is A", "confidence": 0.9, "attributes": {"entity": "x", "value": "A"}},
-        {"modality": "image", "content": "entity value is A", "confidence": 0.8, "attributes": {"entity": "x", "value": "A"}},
-    ])
-    assert multimodal.fuse(evidence).confidence > 0
+    assert callable(list_recent_chats)
+    assert callable(load_chat)
+    assert callable(save_chat)
+    assert callable(list_tasks)
+    assert callable(fetch_manifest)
+    assert callable(plugin_payload)
+    assert callable(router.select)
 
-    ensemble = ModelEnsemble([ModelProfile("test-model", ["research"], reliability=0.95)])
-    result = ensemble.run("research", {"test-model": lambda _: "answer"}, ["research"])
-    assert result.selected == "answer"
+    assert coder_plugin.name == "Coder"
+    assert coder_plugin.version
+    assert "code_generation" in coder_plugin.capabilities
+    assert coder_plugin.execution == "external_https_sandbox"
 
-    registry = ToolRegistry()
-    registry.register(ToolSpec("calculator", "safe calculation", ["calculate"]))
-    tools = PluginOrchestrator(registry)
-    assert tools.plan("calculate", ["calculate"])
+    # Verify the core rejects an empty request without touching an AI provider.
+    result = get_agent_core().run("")
+    assert result.success is False
+    assert result.answer
 
-    verifier = SourceVerifier()
-    source = ResearchSource("https://example.org", source_type="academic", authority=0.9, relevance=0.9, freshness=0.9)
-    assert verifier.verify_claim("test", [source]).status == "strongly_supported"
-
-    evaluator = SelfEvaluator()
-    recovery = RecoveryController(max_retries=1)
-    value, evaluation, attempts = recovery.run(lambda: "ok", evaluator, expected=lambda x: x == "ok")
-    assert value == "ok" and evaluation.status.value == "pass" and attempts == 1
-
-    benchmark = ContinuousEvaluator().run(lambda task: task.upper(), [EvalCase("1", "ok", "OK")])
-    assert benchmark.pass_rate == 1.0
-    assert RegressionGate().approve(benchmark)["approved"]
-
-    core = UltraLegend()
-    assert core.health_snapshot()["status"] == "ready"
-    assert core.run("ping", lambda _: "pong").answer == "pong"
-
-    stress = StressSuite().run([StressCase("core", lambda: core.run("ping", lambda _: "pong"))])
-    assert StressSuite.summary(stress)["pass_rate"] == 1.0
-    print("ULTRA_LEGEND_INTEGRATION_SMOKE: PASS")
+    print("CURRENT_AGENT_INTEGRATION_SMOKE: PASS")
 
 
 if __name__ == "__main__":
