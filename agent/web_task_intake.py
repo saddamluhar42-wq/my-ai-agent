@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from zoneinfo import ZoneInfo
 
 from agent.executor import ExecutionResult
@@ -23,7 +24,7 @@ def try_create_web_task(query: str, user_id=None) -> ExecutionResult | None:
         return ExecutionResult(answer=message, success=False, skill="scheduled_task", metadata={"reason": "telegram_token_not_configured", "error": message})
 
     try:
-        chat_id = get_default_telegram_chat_id()
+        chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip() or get_default_telegram_chat_id()
     except Exception as exc:
         message = f"Task schedule nahi hua: Telegram destination read nahi ho saki: {str(exc)[:500]}"
         return ExecutionResult(answer=message, success=False, skill="scheduled_task", metadata={"reason": "telegram_destination_read_failed", "error": message})
