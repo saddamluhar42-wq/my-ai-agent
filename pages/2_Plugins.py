@@ -5,7 +5,7 @@ import streamlit as st
 from plugins.coder import plugin as coder_plugin
 from plugins.manager import fetch_manifest, plugin_payload
 
-st.set_page_config(page_title="Plugin Hub", page_icon="🧩", layout="wide")
+st.set_page_config(page_title="Plugin Hub", page_icon=":material/extension:", layout="wide")
 
 st.markdown("""
 <style>
