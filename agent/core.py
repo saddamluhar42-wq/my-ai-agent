@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 from ai.agent import AgentError, generate
+from plugins.router import router
 
 
 @dataclass
@@ -16,10 +17,10 @@ class ExecutionResult:
 
 
 class AgentCore:
-    """Fast core agent. Heavy intelligence stays in optional external plugins."""
+    """Fast core. Routes to one capability; heavy intelligence remains external."""
 
     name = "My AI Agent"
-    version = "3.2-rag-plugin-core"
+    version = "3.3-lite-router"
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         query = str(query or "").strip()
@@ -32,8 +33,12 @@ class AgentCore:
         file_context = str(context.get("file_context") or "").strip()
         preferred_provider = context.get("preferred_provider")
         owner_key = str(context.get("owner_key") or context.get("user_id") or "").strip()
+        route = router.select(query, context)
+        capability = route["capability"]
         rag_context = ""
 
+        # Only memory/RAG work is performed when an owner is available. The router
+        # itself is deterministic and local, so ordinary requests add no network hop.
         try:
             from plugins.supabase_memory import memory_text, recall_context, recall
             if owner_key:
@@ -62,18 +67,19 @@ class AgentCore:
                     lines.append(f"{str(message.get('role', 'user')).upper()}: {str(message.get('content')).strip()}")
             if lines:
                 sections.extend(["", "RECENT CONVERSATION:", "\n".join(lines)])
-
         if memory_context:
             sections.extend(["", "RELEVANT LONG-TERM MEMORY:", memory_context])
-
         if rag_context:
             sections.extend(["", "RETRIEVED KNOWLEDGE / DOCUMENTS:", rag_context])
-
         if file_context:
             sections.extend(["", "UPLOADED FILE CONTEXT:", file_context])
 
         try:
-            result = generate(prompt="\n".join(sections), preferred_provider=preferred_provider)
+            result = generate(
+                prompt="\n".join(sections),
+                preferred_provider=preferred_provider,
+                route_capability=capability,
+            )
         except AgentError:
             raise
         except Exception as exc:
@@ -89,7 +95,7 @@ class AgentCore:
                 remember(
                     owner_key,
                     f"User: {query}\nAssistant: {answer}",
-                    metadata={"provider": str(result.get("provider") or ""), "model": str(result.get("model") or "")},
+                    metadata={"provider": str(result.get("provider") or ""), "model": str(result.get("model") or ""), "route": capability},
                 )
             except Exception:
                 pass
@@ -98,10 +104,11 @@ class AgentCore:
             answer=answer,
             success=True,
             provider=str(result.get("provider") or ""),
-            skill="general",
+            skill=capability,
             metadata={
                 "agent_version": self.version,
                 "model": str(result.get("model") or ""),
+                "route": route,
                 "research": result.get("research") or {},
                 "supabase_rag": bool(owner_key and rag_context),
             },
