@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due ON scheduled_tasks(status, due_at);
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_chat ON scheduled_tasks(chat_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS runtime_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 _SCHEMA_READY = False
@@ -41,6 +46,31 @@ def ensure_task_schema() -> None:
             with connection.cursor() as cursor:
                 cursor.execute(TASK_SCHEMA)
         _SCHEMA_READY = True
+
+
+def remember_telegram_chat_id(chat_id: str) -> None:
+    value = str(chat_id or "").strip()
+    if not value:
+        return
+    ensure_task_schema()
+    execute(
+        """
+        INSERT INTO runtime_settings(setting_key, setting_value, updated_at)
+        VALUES ('telegram_chat_id', %s, NOW())
+        ON CONFLICT (setting_key)
+        DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW();
+        """,
+        (value,),
+    )
+
+
+def get_default_telegram_chat_id() -> str:
+    ensure_task_schema()
+    row = execute(
+        "SELECT setting_value FROM runtime_settings WHERE setting_key = 'telegram_chat_id' LIMIT 1;",
+        fetch="one",
+    )
+    return str(row[0]).strip() if row and row[0] else ""
 
 
 def create_task(user_id: Optional[int], chat_id: str, task_text: str, due_at: datetime, timezone: str = "Asia/Kolkata") -> int:
@@ -77,11 +107,7 @@ def claim_due_tasks(limit: int = 20) -> List[Dict[str, Any]]:
                 return []
             task_ids = [row[0] for row in rows]
             cursor.execute(
-                """
-                UPDATE scheduled_tasks
-                SET status = 'running', attempts = attempts + 1, claimed_at = NOW()
-                WHERE id = ANY(%s);
-                """,
+                "UPDATE scheduled_tasks SET status = 'running', attempts = attempts + 1, claimed_at = NOW() WHERE id = ANY(%s);",
                 (task_ids,),
             )
     return [
@@ -92,14 +118,7 @@ def claim_due_tasks(limit: int = 20) -> List[Dict[str, Any]]:
 
 def complete_task(task_id: int, result: str) -> None:
     ensure_task_schema()
-    execute(
-        """
-        UPDATE scheduled_tasks
-        SET status = 'completed', executed_at = NOW(), result = %s, last_error = NULL
-        WHERE id = %s;
-        """,
-        (str(result)[:4000], task_id),
-    )
+    execute("UPDATE scheduled_tasks SET status = 'completed', executed_at = NOW(), result = %s, last_error = NULL WHERE id = %s;", (str(result)[:4000], task_id))
 
 
 def retry_task(task_id: int, error: str, max_attempts: int = 3) -> None:
@@ -118,18 +137,17 @@ def retry_task(task_id: int, error: str, max_attempts: int = 3) -> None:
 
 def list_tasks(chat_id: str = "", limit: int = 20) -> List[Dict[str, Any]]:
     ensure_task_schema()
+    resolved_chat_id = str(chat_id or "").strip() or get_default_telegram_chat_id()
     safe_limit = max(1, min(int(limit), 50))
-    if str(chat_id).strip():
+    if resolved_chat_id:
         rows = execute(
             f"""
             SELECT id, task_text, due_at, timezone, status, attempts, created_at, executed_at, result, last_error
-            FROM scheduled_tasks
-            WHERE chat_id = %s
-            ORDER BY due_at ASC, id DESC
+            FROM scheduled_tasks WHERE chat_id = %s
+            ORDER BY CASE WHEN status IN ('pending', 'running') THEN 0 ELSE 1 END, due_at ASC, id DESC
             LIMIT {safe_limit};
             """,
-            (str(chat_id),),
-            fetch="all",
+            (resolved_chat_id,), fetch="all",
         )
     else:
         rows = execute(
@@ -150,12 +168,7 @@ def list_tasks(chat_id: str = "", limit: int = 20) -> List[Dict[str, Any]]:
 def cancel_task(task_id: int, chat_id: str) -> bool:
     ensure_task_schema()
     row = execute(
-        """
-        UPDATE scheduled_tasks SET status = 'cancelled'
-        WHERE id = %s AND chat_id = %s AND status IN ('pending', 'running')
-        RETURNING id;
-        """,
-        (task_id, str(chat_id)),
-        fetch="one",
+        "UPDATE scheduled_tasks SET status = 'cancelled' WHERE id = %s AND chat_id = %s AND status IN ('pending', 'running') RETURNING id;",
+        (task_id, str(chat_id)), fetch="one",
     )
     return bool(row)
