@@ -10,6 +10,8 @@ import re
 import httpx
 from pypdf import PdfReader
 
+from knowledge.multimodal import MultimodalAnalysisError, analyze_media
+
 
 @dataclass(slots=True)
 class SourcePayload:
@@ -110,7 +112,7 @@ class GitHubConnector:
 
 
 class MediaConnector:
-    """Indexes image/video assets through optional externally supplied analysis."""
+    """Analyze image/video assets before they enter the knowledge pipeline."""
     IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic"}
     VIDEO = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 
@@ -125,8 +127,25 @@ class MediaConnector:
             kind = "video"
         else:
             raise SourceConnectorError(f"Unsupported media type: {suffix}")
-        content = analysis or f"{kind.title()} asset: {p.name}. Multimodal analysis pending."
-        return SourcePayload(content, str(p), p.name, kind, {"path": str(p), "extension": suffix, "analysis_pending": analysis is None})
+
+        if analysis:
+            content = analysis
+            metadata = {"path": str(p), "extension": suffix, "analysis_pending": False, "analysis_source": "external"}
+        else:
+            try:
+                result = analyze_media(p)
+                content = result["analysis"]
+                metadata = {
+                    "path": str(p),
+                    "extension": suffix,
+                    "analysis_pending": False,
+                    "analysis_source": "gemini_multimodal",
+                    "analysis_model": result.get("model", ""),
+                }
+            except MultimodalAnalysisError as exc:
+                raise SourceConnectorError(f"Multimodal analysis failed for {p.name}: {exc}") from exc
+
+        return SourcePayload(content, str(p), p.name, kind, metadata)
 
 
 class AutomaticSourceConnector:
