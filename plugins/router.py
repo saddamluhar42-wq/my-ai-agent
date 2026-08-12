@@ -40,6 +40,30 @@ class CapabilityRouter:
             "download file", "download files", "save to cloud", "save file to cloud",
             "list files", "find file", "find files", "share file", "share files",
         ),
+        "crm_sales": (
+            "crm", "customer relationship", "lead", "leads", "sales pipeline", "deal", "deals",
+            "customer record", "customer records", "sales follow up", "sales follow-up",
+        ),
+        "accounting_finance": (
+            "accounting", "bookkeeping", "invoice", "invoices", "expense", "expenses",
+            "profit", "loss", "accounts payable", "accounts receivable", "quickbooks",
+        ),
+        "team_communication": (
+            "slack", "team message", "team messages", "team chat", "send team message",
+            "channel message", "internal communication", "notify team",
+        ),
+        "project_management": (
+            "asana", "trello", "project management", "project task", "project tasks",
+            "task board", "kanban", "assign task", "project status", "sprint task",
+        ),
+        "knowledge_management": (
+            "notion", "knowledge base", "wiki", "notes", "team notes", "company knowledge",
+            "documentation", "internal docs", "knowledge management",
+        ),
+        "automation": (
+            "zapier", "automation", "automate this", "workflow automation", "connect apps",
+            "trigger workflow", "automated workflow",
+        ),
         "coder": (
             "code", "coding", "python", "javascript", "typescript", "debug", "bug",
             "error", "refactor", "program", "script", "function", "class", "api", "sql",
@@ -58,6 +82,19 @@ class CapabilityRouter:
         "documents": (
             "document", "pdf", "file", "uploaded", "attachment", "summarize this file",
         ),
+    }
+
+    EXTERNAL_SERVICES = {
+        "app_development": "Replit",
+        "openai_developer": "OpenAI Platform",
+        "outlook_calendar": "Microsoft Outlook Calendar",
+        "file_storage": "Dropbox",
+        "crm_sales": "HubSpot",
+        "accounting_finance": "QuickBooks",
+        "team_communication": "Slack",
+        "project_management": "Asana/Trello",
+        "knowledge_management": "Notion",
+        "automation": "Zapier",
     }
 
     def route(self, query: str, context: Mapping[str, Any] | None = None) -> Route:
@@ -90,12 +127,7 @@ class CapabilityRouter:
             "reason": route.reason,
             "confidence": route.confidence,
             "fan_out": False,
-            "external_service": {
-                "app_development": "Replit",
-                "openai_developer": "OpenAI Platform",
-                "outlook_calendar": "Microsoft Outlook Calendar",
-                "file_storage": "Dropbox",
-            }.get(route.capability),
+            "external_service": self.EXTERNAL_SERVICES.get(route.capability),
         }
 
 
