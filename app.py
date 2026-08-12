@@ -10,31 +10,24 @@ from agent.core import run_agent
 from ai.agent import AgentError, generate_image
 from config import (
     ANTHROPIC_API_KEY,
-    CEREBRAS_API_KEY,
-    DEEPSEEK_API_KEY,
-    GEMINI_API_KEY,
-    GROQ_API_KEY,
-    HF_TOKEN,
-    KIMI_API_KEY,
-    MISTRAL_API_KEY,
-    NVIDIA_IMAGE_1,
-    OPENAI_API_KEY,
-    OPENROUTER_API_KEY,
-    XAI_API_KEY,
-    YOU_API_KEY,
     ANTHROPIC_MODEL,
-    CEREBRAS_MODEL,
+    DEEPSEEK_API_KEY,
     DEEPSEEK_MODEL,
+    GEMINI_API_KEY,
     GEMINI_MODEL,
-    GROQ_MODEL,
-    HF_IMAGE_MODEL,
+    KIMI_API_KEY,
     KIMI_MODEL,
-    MISTRAL_MODEL,
-    NVIDIA_IMAGE_MODEL,
+    OPENAI_API_KEY,
     OPENAI_MODEL,
+    OPENROUTER_API_KEY,
     OPENROUTER_MODEL,
+    XAI_API_KEY,
     XAI_MODEL,
+    YOU_API_KEY,
     YOU_MODEL,
+    HF_TOKEN,
+    HF_IMAGE_MODEL,
+    TELEGRAM_BOT_TOKEN,
     get_configured_video_providers,
 )
 from providers.video.bootstrap import get_ready_video_providers, initialize_video_system
@@ -42,7 +35,7 @@ from providers.video.manager import generate_video
 
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 MAX_FILE_SIZE_MB = 20
 
 st.set_page_config(
@@ -114,20 +107,18 @@ def clean_text(value: object) -> str:
 
 
 def model_connection_status() -> list[tuple[str, bool, str]]:
+    """Show exactly the model/service connections represented in Render Environment."""
     return [
         ("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL),
         ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL),
         ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL),
-        ("Groq", bool(GROQ_API_KEY), GROQ_MODEL),
-        ("Cerebras", bool(CEREBRAS_API_KEY), CEREBRAS_MODEL),
+        ("Hugging Face", bool(HF_TOKEN), HF_IMAGE_MODEL),
         ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL),
-        ("Mistral", bool(MISTRAL_API_KEY), MISTRAL_MODEL),
         ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL),
         ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL),
+        ("Telegram", bool(TELEGRAM_BOT_TOKEN), "Bot API"),
         ("xAI", bool(XAI_API_KEY), XAI_MODEL),
         ("You.com", bool(YOU_API_KEY), YOU_MODEL),
-        ("Hugging Face", bool(HF_TOKEN), HF_IMAGE_MODEL),
-        ("NVIDIA", bool(NVIDIA_IMAGE_1), NVIDIA_IMAGE_MODEL),
     ]
 
 
@@ -154,25 +145,15 @@ def render_history() -> None:
 
 
 def render_model_connections() -> None:
-    st.caption("Render Environment Variables")
     connected = 0
-    for name, configured, model in model_connection_status():
+    connections = model_connection_status()
+    for name, configured, model in connections:
         if configured:
             connected += 1
             st.success(f"✓ {name}  •  {model}")
         else:
             st.caption(f"○ {name} — not connected")
-
-    st.divider()
-    st.caption("Video Models")
-    video_providers = get_configured_video_providers()
-    if video_providers:
-        for provider in video_providers:
-            st.success(f"✓ {provider.title()} — configured")
-    else:
-        st.caption("○ No video provider connected")
-
-    st.caption(f"{connected}/{len(model_connection_status())} model connections configured")
+    st.caption(f"{connected}/{len(connections)} connections configured")
 
 
 def render_sidebar(video_error: str) -> None:
@@ -197,8 +178,8 @@ def render_sidebar(video_error: str) -> None:
         st.divider()
         st.subheader("AI Provider")
         providers = [
-            "Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral",
-            "Anthropic", "DeepSeek", "Kimi", "OpenAI", "xAI", "You.com",
+            "Auto", "Anthropic", "DeepSeek", "Gemini", "Kimi",
+            "OpenAI", "OpenRouter", "xAI", "You.com",
         ]
         current_provider = st.session_state.get("preferred_provider", "Auto")
         provider = st.selectbox(
@@ -236,7 +217,7 @@ def render_sidebar(video_error: str) -> None:
             st.caption("Loaded: " + ", ".join(st.session_state["uploaded_names"]))
 
         st.divider()
-        st.caption("Render Free can sleep after inactivity. API keys remain in Render Environment Variables and are never displayed.")
+        st.caption("API keys remain in Render Environment Variables and are never displayed.")
 
 
 def render_header() -> None:
