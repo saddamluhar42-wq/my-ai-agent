@@ -17,10 +17,10 @@ class ExecutionResult:
 
 
 class AgentCore:
-    """Fast core. Routes to one capability; heavy intelligence remains external."""
+    """Capability-aware AI core with safe autonomous workflow execution."""
 
     name = "My AI Agent"
-    version = "3.4-lite-router"
+    version = "4.0-automation"
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         query = str(query or "").strip()
@@ -35,11 +35,34 @@ class AgentCore:
         owner_key = str(context.get("owner_key") or context.get("user_id") or "").strip()
         route = router.select(query, context)
         capability = route["capability"]
+
+        # Automation is a first-class execution path. Read-only actions can run
+        # immediately; external side effects remain approval-gated by the engine.
+        if capability == "automation" or bool(context.get("automation")):
+            from agent.automation import run_automation
+            automation_context = dict(context)
+            automation_context["owner_key"] = owner_key
+            automation_context["preferred_provider"] = preferred_provider
+            result = run_automation(
+                query,
+                context=automation_context,
+                approved=bool(context.get("automation_approved")),
+            )
+            return ExecutionResult(
+                answer=result.answer,
+                success=result.success,
+                provider="automation",
+                skill="automation",
+                metadata={
+                    "agent_version": self.version,
+                    "route": route,
+                    "automation": {"steps": result.steps, "errors": result.errors},
+                },
+            )
+
         rag_context = ""
         rag_enabled = bool(context.get("use_rag")) or capability in {"memory", "documents"}
 
-        # Supabase is opt-in or capability-specific. Ordinary chat does not pay
-        # the network/latency cost of memory retrieval.
         if owner_key and rag_enabled:
             try:
                 from plugins.supabase_memory import memory_text, recall_context, recall
@@ -90,7 +113,6 @@ class AgentCore:
         if not answer:
             raise AgentError("AI engine returned an empty answer.")
 
-        # Memory writes are also opt-in so normal chat stays single-path and fast.
         if owner_key and (bool(context.get("persist_memory")) or capability == "memory"):
             try:
                 from plugins.supabase_memory import remember
