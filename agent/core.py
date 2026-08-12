@@ -20,7 +20,7 @@ class AgentCore:
     """Fast core. Routes to one capability; heavy intelligence remains external."""
 
     name = "My AI Agent"
-    version = "3.3-lite-router"
+    version = "3.4-lite-router"
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         query = str(query or "").strip()
@@ -36,17 +36,18 @@ class AgentCore:
         route = router.select(query, context)
         capability = route["capability"]
         rag_context = ""
+        rag_enabled = bool(context.get("use_rag")) or capability in {"memory", "documents"}
 
-        # Only memory/RAG work is performed when an owner is available. The router
-        # itself is deterministic and local, so ordinary requests add no network hop.
-        try:
-            from plugins.supabase_memory import memory_text, recall_context, recall
-            if owner_key:
+        # Supabase is opt-in or capability-specific. Ordinary chat does not pay
+        # the network/latency cost of memory retrieval.
+        if owner_key and rag_enabled:
+            try:
+                from plugins.supabase_memory import memory_text, recall_context, recall
                 rag_context = recall_context(owner_key, query)
                 if not memory_context:
                     memory_context = memory_text(recall(owner_key, query, limit=5))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         sections = [
             "You are My AI Agent.",
@@ -89,7 +90,8 @@ class AgentCore:
         if not answer:
             raise AgentError("AI engine returned an empty answer.")
 
-        if owner_key:
+        # Memory writes are also opt-in so normal chat stays single-path and fast.
+        if owner_key and (bool(context.get("persist_memory")) or capability == "memory"):
             try:
                 from plugins.supabase_memory import remember
                 remember(
