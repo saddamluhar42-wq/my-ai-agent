@@ -24,9 +24,11 @@ from database.tasks import list_tasks
 from ui.experience import apply as apply_ui, render_empty_state, render_header as render_optimized_header, thinking_status, finish_status, fail_status
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 MAX_FILE_SIZE_MB = 20
 MAX_FILE_CONTEXT_CHARS = 18000
+MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".mov", ".webm", ".avi", ".mkv"}
+DOCUMENT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".html", ".xml", ".yaml", ".yml", ".pdf", ".docx"}
 
 TIME_LOCATIONS = {
     "India — IST": ("Asia/Kolkata", "India"),
@@ -48,7 +50,8 @@ apply_ui()
 def initialize_state() -> None:
     defaults = {
         "messages": [], "recent_context": [], "preferred_provider": "Auto", "file_context": "",
-        "uploaded_names": [], "uploaded_signature": "", "pending_time_prompt": None, "pending_time_location": None,
+        "uploaded_names": [], "uploaded_signature": "", "uploaded_media": [],
+        "pending_time_prompt": None, "pending_time_location": None,
         "last_time_location": "India — IST", "session_key": str(uuid.uuid4()),
         "browser_identity": str(uuid.uuid4()), "web_user_id": None,
         "chat_title": "New Chat", "history_loaded": False,
@@ -84,6 +87,11 @@ def owner_key() -> str:
     return f"user:{user_id}" if user_id is not None else f"browser:{st.session_state['browser_identity']}"
 
 
+def _extension(name: str) -> str:
+    name = clean_text(name).lower()
+    return "." + name.rsplit(".", 1)[1] if "." in name.rsplit("/", 1)[-1] else ""
+
+
 def safe_read_file(uploaded_file) -> str:
     name = uploaded_file.name.lower()
     raw = uploaded_file.getvalue()
@@ -101,22 +109,36 @@ def safe_read_file(uploaded_file) -> str:
 def process_files(files) -> None:
     if not files:
         return
-    signature_source = "|".join(f"{f.name}:{getattr(f, 'size', 0)}" for f in files)
+    signature_source = "|".join(f"{f.name}:{getattr(f, 'size', 0)}:{getattr(f, 'type', '')}" for f in files)
     signature = hashlib.sha256(signature_source.encode("utf-8")).hexdigest()
     if signature == st.session_state.get("uploaded_signature"):
         return
-    chunks, names = [], []
+    chunks, names, media = [], [], []
     for uploaded in files:
         try:
             names.append(uploaded.name)
+            ext = _extension(uploaded.name)
+            raw = uploaded.getvalue()
+            if len(raw) > MAX_FILE_SIZE_MB * 1024 * 1024:
+                raise ValueError(f"File exceeds {MAX_FILE_SIZE_MB} MB limit.")
+            if ext in MEDIA_EXTENSIONS:
+                media.append({
+                    "name": uploaded.name,
+                    "type": getattr(uploaded, "type", "") or "application/octet-stream",
+                    "data": raw,
+                    "size": len(raw),
+                })
+                continue
+            if ext not in DOCUMENT_EXTENSIONS:
+                raise ValueError(f"Unsupported file type: {ext or 'unknown'}")
             text = safe_read_file(uploaded)
             chunks.append(f"FILE: {uploaded.name}\n{text[:MAX_FILE_CONTEXT_CHARS]}")
         except Exception as exc:
             st.error(f"{uploaded.name}: {exc}")
     st.session_state["uploaded_signature"] = signature
-    if chunks:
-        st.session_state["file_context"] = "\n\n---\n\n".join(chunks)
-        st.session_state["uploaded_names"] = names
+    st.session_state["uploaded_media"] = media
+    st.session_state["uploaded_names"] = names
+    st.session_state["file_context"] = "\n\n---\n\n".join(chunks)
 
 
 def is_time_query(prompt: str) -> bool:
@@ -176,6 +198,7 @@ def start_new_chat() -> None:
     st.session_state["recent_context"] = []
     st.session_state["file_context"] = ""
     st.session_state["uploaded_names"] = []
+    st.session_state["uploaded_media"] = []
     st.session_state["uploaded_signature"] = ""
     st.session_state["pending_time_prompt"] = None
     st.session_state["pending_time_location"] = None
@@ -304,14 +327,29 @@ def render_sidebar() -> None:
         st.subheader("Files")
         files = st.file_uploader(
             "Upload files",
-            type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"],
+            type=[
+                "txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx",
+                "jpg", "jpeg", "png", "webp", "gif", "mp4", "mov", "webm", "avi", "mkv",
+            ],
             accept_multiple_files=True,
             label_visibility="collapsed",
+            help="Documents, images and videos supported. Max 20 MB per file.",
         )
         if files:
             process_files(files)
         if st.session_state.get("uploaded_names"):
             st.caption("Loaded: " + ", ".join(st.session_state["uploaded_names"]))
+        media = st.session_state.get("uploaded_media", [])
+        if media:
+            st.caption(f"Media attachments: {len(media)}")
+            for item in media:
+                mime = item.get("type", "")
+                if mime.startswith("image/"):
+                    st.image(item["data"], caption=item["name"], use_container_width=True)
+                elif mime.startswith("video/"):
+                    st.video(item["data"])
+                else:
+                    st.caption(f"📎 {item['name']}")
         st.divider()
         st.caption("API keys remain in Render Environment Variables and are never displayed.")
 
@@ -424,13 +462,17 @@ def handle_prompt(prompt: str) -> None:
         return
 
     recent = st.session_state.get("recent_context", [])[-20:]
+    media = st.session_state.get("uploaded_media", [])
     context = {
         "user_id": get_web_user_id(),
         "memory_context": "",
         "file_context": st.session_state.get("file_context", ""),
         "recent_messages": recent,
         "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"),
-        "uploaded_files": [],
+        "uploaded_files": [
+            {"name": item["name"], "type": item["type"], "data": item["data"], "size": item["size"]}
+            for item in media
+        ],
     }
 
     with st.chat_message("assistant"):
