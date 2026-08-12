@@ -28,9 +28,8 @@ from config import (
     HF_TOKEN,
     HF_IMAGE_MODEL,
     TELEGRAM_BOT_TOKEN,
-    get_configured_video_providers,
 )
-from providers.video.bootstrap import get_ready_video_providers, initialize_video_system
+from providers.video.bootstrap import initialize_video_system
 from providers.video.manager import generate_video
 
 
@@ -156,7 +155,7 @@ def render_model_connections() -> None:
     st.caption(f"{connected}/{len(connections)} connections configured")
 
 
-def render_sidebar(video_error: str) -> None:
+def render_sidebar() -> None:
     with st.sidebar:
         st.markdown(f"## 🤖 {APP_NAME}")
         st.caption(f"v{APP_VERSION} • Streamlit direct mode")
@@ -189,19 +188,6 @@ def render_sidebar(video_error: str) -> None:
             label_visibility="collapsed",
         )
         st.session_state["preferred_provider"] = provider
-
-        st.divider()
-        st.subheader("System")
-        if video_error:
-            st.error(f"Video system: {video_error}")
-        else:
-            try:
-                ready = get_ready_video_providers()
-                st.success(f"Video: {len(ready)} ready") if ready else st.warning("Video: no provider ready")
-                if ready:
-                    st.caption(", ".join(ready))
-            except Exception as exc:
-                st.warning(f"Video status unavailable: {exc}")
 
         st.divider()
         st.subheader("Files")
@@ -351,8 +337,8 @@ def handle_prompt(prompt: str) -> None:
 
 def main() -> None:
     initialize_state()
-    _, video_error = boot_video_system()
-    render_sidebar(video_error)
+    boot_video_system()
+    render_sidebar()
     render_header()
     render_messages()
     prompt = st.chat_input("Message My AI Agent...")
