@@ -2,7 +2,7 @@ import os
 
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 RENDER_URL = os.getenv("RENDER_URL", "https://my-ai-agent-q6po.onrender.com")
 
@@ -29,9 +29,15 @@ OPENAI_API_KEY_3 = os.getenv("OPENAI_API_KEY_3")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 XAI_API_KEY_2 = os.getenv("XAI_API_KEY_2")
 XAI_API_KEY_3 = os.getenv("XAI_API_KEY_3")
-YOU_API_KEY = os.getenv("YOU_API_KEY")
-YOU_API_KEY_2 = os.getenv("YOU_API_KEY_2")
-YOU_API_KEY_3 = os.getenv("YOU_API_KEY_3")
+
+# You.com Web Search keys. Support both the documented YDC names and the
+# legacy YOU names so existing deployments continue to work during migration.
+YDC_API_KEY = os.getenv("YDC_API_KEY") or os.getenv("YOU_API_KEY")
+YDC_API_KEY_2 = os.getenv("YDC_API_KEY_2") or os.getenv("YOU_API_KEY_2")
+YDC_API_KEY_3 = os.getenv("YDC_API_KEY_3") or os.getenv("YOU_API_KEY_3")
+YOU_API_KEY = YDC_API_KEY
+YOU_API_KEY_2 = YDC_API_KEY_2
+YOU_API_KEY_3 = YDC_API_KEY_3
 
 # Image providers
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -72,7 +78,7 @@ VIDEO_REQUEST_TIMEOUT = int(os.getenv("VIDEO_REQUEST_TIMEOUT", "300"))
 VIDEO_POLL_INTERVAL = float(os.getenv("VIDEO_POLL_INTERVAL", "3"))
 VIDEO_MAX_DURATION = int(os.getenv("VIDEO_MAX_DURATION", "300"))
 
-# Model names shown in the UI and used by providers that support model selection.
+# Model names
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_MODEL_2 = os.getenv("GEMINI_MODEL_2", "gemini-2.5-flash")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
@@ -89,7 +95,13 @@ YOU_MODEL = os.getenv("YOU_MODEL", "default")
 HF_IMAGE_MODEL = os.getenv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
 NVIDIA_IMAGE_MODEL = os.getenv("NVIDIA_IMAGE_MODEL", "flux.1-dev")
 
+# Web research providers
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+TAVILY_API_KEY_2 = os.getenv("TAVILY_API_KEY_2")
+TAVILY_API_KEY_3 = os.getenv("TAVILY_API_KEY_3")
+TAVILY_URL = "https://api.tavily.com/search"
+YOU_SEARCH_URL = "https://ydc-index.io/v1/search"
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET")
@@ -102,7 +114,6 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-TAVILY_URL = "https://api.tavily.com/search"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/images/generations"
 TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_BOT_TOKEN else ""
 
@@ -130,23 +141,26 @@ def is_deepseek_configured(): return bool(DEEPSEEK_API_KEY or DEEPSEEK_API_KEY_2
 def is_kimi_configured(): return bool(KIMI_API_KEY or KIMI_API_KEY_2 or KIMI_API_KEY_3)
 def is_openai_configured(): return bool(OPENAI_API_KEY or OPENAI_API_KEY_2 or OPENAI_API_KEY_3)
 def is_xai_configured(): return bool(XAI_API_KEY or XAI_API_KEY_2 or XAI_API_KEY_3)
-def is_you_configured(): return bool(YOU_API_KEY or YOU_API_KEY_2 or YOU_API_KEY_3)
+def is_you_configured(): return bool(YDC_API_KEY or YDC_API_KEY_2 or YDC_API_KEY_3)
 def is_hf_configured(): return bool(HF_TOKEN or HF_TOKEN_2 or HF_TOKEN_3)
 def is_nvidia_configured(): return bool(NVIDIA_IMAGE_1 or NVIDIA_IMAGE_2 or NVIDIA_IMAGE_3)
+def is_tavily_configured(): return bool(TAVILY_API_KEY or TAVILY_API_KEY_2 or TAVILY_API_KEY_3)
+def is_database_configured(): return bool(DATABASE_URL)
+def is_telegram_configured(): return bool(TELEGRAM_BOT_TOKEN)
+def is_telegram_webhook_secret_configured(): return bool(TELEGRAM_WEBHOOK_SECRET)
 
 def get_nvidia_image_keys(): return [key for key in [NVIDIA_IMAGE_1, NVIDIA_IMAGE_2, NVIDIA_IMAGE_3] if key]
+def get_runway_keys(): return [key for key in [RUNWAY_API_KEY1, RUNWAY_API_KEY2, RUNWAY_API_KEY3] if key]
+def get_luma_keys(): return [key for key in [LUMA_API_KEY1, LUMA_API_KEY2, LUMA_API_KEY3] if key]
+def get_kling_keys(): return [key for key in [KLING_API_KEY1, KLING_API_KEY2, KLING_API_KEY3] if key]
+def get_google_video_keys(): return [key for key in [GOOGLE_VIDEO_API_KEY, GOOGLE_VIDEO_API_KEY_2] if key]
+def get_replicate_tokens(): return [token for token in [REPLICATE_API_TOKEN, REPLICATE_API_TOKEN_2] if token]
 
 def is_google_video_configured(): return bool(GOOGLE_VIDEO_API_KEY or GOOGLE_VIDEO_API_KEY_2)
 def is_runway_configured(): return bool(RUNWAY_API_KEY1 or RUNWAY_API_KEY2 or RUNWAY_API_KEY3)
 def is_luma_configured(): return bool(LUMA_API_KEY1 or LUMA_API_KEY2 or LUMA_API_KEY3)
 def is_kling_configured(): return bool(KLING_API_KEY1 or KLING_API_KEY2 or KLING_API_KEY3)
 def is_replicate_configured(): return bool(REPLICATE_API_TOKEN or REPLICATE_API_TOKEN_2)
-
-def get_runway_keys(): return [key for key in [RUNWAY_API_KEY1, RUNWAY_API_KEY2, RUNWAY_API_KEY3] if key]
-def get_luma_keys(): return [key for key in [LUMA_API_KEY1, LUMA_API_KEY2, LUMA_API_KEY3] if key]
-def get_kling_keys(): return [key for key in [KLING_API_KEY1, KLING_API_KEY2, KLING_API_KEY3] if key]
-def get_google_video_keys(): return [key for key in [GOOGLE_VIDEO_API_KEY, GOOGLE_VIDEO_API_KEY_2] if key]
-def get_replicate_tokens(): return [token for token in [REPLICATE_API_TOKEN, REPLICATE_API_TOKEN_2] if token]
 
 def get_configured_video_providers():
     providers = []
@@ -157,11 +171,6 @@ def get_configured_video_providers():
     if is_replicate_configured(): providers.append("replicate")
     return providers
 
-def is_tavily_configured(): return bool(TAVILY_API_KEY)
-def is_database_configured(): return bool(DATABASE_URL)
-def is_telegram_configured(): return bool(TELEGRAM_BOT_TOKEN)
-def is_telegram_webhook_secret_configured(): return bool(TELEGRAM_WEBHOOK_SECRET)
-
 def get_config_status():
     return {
         "gemini": is_gemini_configured(), "openrouter": is_openrouter_configured(),
@@ -170,6 +179,6 @@ def get_config_status():
         "openai": is_openai_configured(), "xai": is_xai_configured(), "you": is_you_configured(),
         "huggingface": is_hf_configured(), "nvidia": is_nvidia_configured(),
         "google_video": is_google_video_configured(), "runway_video": is_runway_configured(), "luma_video": is_luma_configured(), "kling_video": is_kling_configured(), "replicate_video": is_replicate_configured(),
-        "video_default_provider": VIDEO_DEFAULT_PROVIDER, "configured_video_providers": get_configured_video_providers(),
         "tavily": is_tavily_configured(), "database": is_database_configured(), "telegram": is_telegram_configured(),
+        "video_default_provider": VIDEO_DEFAULT_PROVIDER, "configured_video_providers": get_configured_video_providers(),
     }
