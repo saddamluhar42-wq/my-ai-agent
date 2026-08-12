@@ -1,8 +1,4 @@
-"""Secure external plugin registry.
-
-Plugins are remote HTTPS services described by a small JSON manifest. The
-manager never downloads or executes arbitrary plugin source code.
-"""
+"""Secure external HTTPS plugin registry and executor."""
 from __future__ import annotations
 
 import json
@@ -11,6 +7,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 MAX_MANIFEST_BYTES = 64 * 1024
+MAX_RESPONSE_BYTES = 512 * 1024
 ALLOWED_SCHEMES = {"https"}
 
 
@@ -61,3 +58,41 @@ def plugin_payload(manifest: PluginManifest) -> dict:
         "endpoint": manifest.endpoint,
         "capabilities": list(manifest.capabilities),
     }
+
+
+def execute_plugin(
+    endpoint: str,
+    capability: str,
+    input_data: dict,
+    timeout: float = 30.0,
+) -> dict:
+    """Call a connected external plugin over HTTPS; never execute plugin source locally."""
+    url = validate_https_url(endpoint)
+    if not capability.strip():
+        raise ValueError("Plugin capability is required.")
+    if not isinstance(input_data, dict):
+        raise ValueError("Plugin input must be a JSON object.")
+
+    body = json.dumps({"capability": capability.strip(), "input": input_data}).encode("utf-8")
+    if len(body) > MAX_MANIFEST_BYTES:
+        raise ValueError("Plugin request is too large.")
+    request = Request(
+        url,
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "My-AI-Agent-Plugin-Manager/1.0",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=timeout) as response:
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise ValueError("Plugin response is too large.")
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Plugin returned an invalid response.")
+    if data.get("ok") is False:
+        raise RuntimeError(str(data.get("error", "Plugin execution failed.")))
+    return data
