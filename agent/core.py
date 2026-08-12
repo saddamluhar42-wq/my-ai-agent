@@ -25,7 +25,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "Ultra Legend AI Core"
-        self.version = "1.9.0"
+        self.version = "2.0.0"
         self.evolution_enabled = True
         self.knowledge_graph_enabled = True
         self.intelligence_telemetry_enabled = True
@@ -55,8 +55,6 @@ class AgentCore:
         file_context = str(context.get("file_context", "") or "").strip()
         explicit_provider = context.get("preferred_provider")
 
-        # Complex research/reasoning tasks get a bounded specialist debate.
-        # This is deliberately opt-in by task complexity and never recursive.
         if self.multi_agent_enabled and self._should_use_multi_agent(query, plan):
             supporting = "\n".join(x for x in [memory_context, file_context] if x)
             try:
@@ -67,21 +65,21 @@ class AgentCore:
                                          preferred_provider=explicit_provider)
                 return self._result_from_specialist_run(query, plan, result, user_id, "multi_agent")
             except (DeepResearchError, AgentError):
-                # Graceful fallback to the normal pipeline below.
                 pass
 
         try:
-            knowledge_context = build_knowledge_context(user_id=user_id, query=query, limit=20)
+            knowledge_context = build_knowledge_context(user_id=user_id, query=query, limit=12) if user_id is not None else ""
         except Exception:
             knowledge_context = ""
 
+        complex_context = self._needs_rich_context(query, plan)
         try:
-            universal_context = build_universal_context(query=query, limit=8)
+            universal_context = build_universal_context(query=query, limit=6) if complex_context else ""
         except Exception:
             universal_context = ""
 
         try:
-            graph_context = build_graph_context(query=query, limit=12) if self.knowledge_graph_enabled else ""
+            graph_context = build_graph_context(query=query, limit=8) if self.knowledge_graph_enabled and complex_context else ""
         except Exception:
             graph_context = ""
 
@@ -175,16 +173,23 @@ class AgentCore:
     @staticmethod
     def _should_use_multi_agent(query, plan) -> bool:
         text = str(query or "").lower()
-        complex_markers = ("deep research", "research", "compare", "analysis", "analyze", "architecture",
-                           "strategy", "investigate", "scientific", "academic", "paper", "why", "evaluate")
-        return bool(plan.requires_verification or len(text.split()) >= 30 or any(m in text for m in complex_markers))
+        explicit = ("deep research", "multi agent", "multi-agent", "debate", "peer review", "research panel",
+                    "compare studies", "academic paper", "scientific literature", "systematic review")
+        return bool(any(m in text for m in explicit) or (plan.requires_verification and len(text.split()) >= 60))
 
     @staticmethod
     def _should_deep_research(query, plan) -> bool:
         text = str(query or "").lower()
-        markers = ("deep research", "latest research", "research paper", "academic", "scientific", "investigate",
-                   "latest", "current", "sources", "citation", "compare studies")
-        return bool(plan.requires_verification and any(m in text for m in markers) or "deep research" in text)
+        markers = ("deep research", "research paper", "academic", "scientific literature", "systematic review",
+                   "compare studies", "citation required", "source comparison")
+        return bool("deep research" in text or (plan.requires_verification and any(m in text for m in markers)))
+
+    @staticmethod
+    def _needs_rich_context(query, plan) -> bool:
+        text = str(query or "").lower()
+        markers = ("compare", "architecture", "strategy", "analysis", "analyze", "research", "design", "debug",
+                   "audit", "evaluate", "explain why", "how does", "pros and cons")
+        return bool(plan.requires_verification or len(text.split()) >= 20 or any(m in text for m in markers))
 
     def _build_prompt(self, query, plan, memory_context, knowledge_context, universal_context, graph_context,
                       file_context, web_context, recent_messages, preferred_provider=None,
@@ -253,33 +258,47 @@ class AgentCore:
         text = str(answer or "").strip()
         cleaned = []
         for line in text.splitlines():
-            if re.match(r"^(user safety|powered by)\s*:", line.strip(), re.I): continue
+            if re.match(r"^(user safety|powered by)\s*:", line.strip(), re.I):
+                continue
             cleaned.append(line)
         return "\n".join(cleaned).strip()
 
     def _build_web_context(self, query: str, plan, location=None) -> str:
-        if not is_tavily_configured() or not self._should_search_web(query, plan, location=location):
-            return "Web search is not configured." if not is_tavily_configured() else ""
+        if not is_tavily_configured():
+            return "Web search is not configured."
+        if not self._should_search_web(query, plan, location=location):
+            return ""
         try:
             result = tavily_search(query, search_depth="advanced", max_results=5, include_answer=True)
             return format_results(result) or ""
-        except TavilyError as error: return f"Web search failed: {error}"
-        except Exception as error: return f"Web search failed unexpectedly: {error}"
+        except TavilyError as error:
+            return f"Web search failed: {error}"
+        except Exception as error:
+            return f"Web search failed unexpectedly: {error}"
 
     @staticmethod
     def _should_search_web(query: str, plan, location=None) -> bool:
         text = str(query or "").strip()
         normalized = re.sub(r"[^a-z0-9\u0900-\u097f]+", " ", text.lower()).strip()
-        if normalized in {"hi", "hello", "hey", "ok", "okay", "ha", "haa", "yes", "no", "done", "thanks", "bye"}: return False
-        if location and normalized == str(location.get("query", "")).lower().strip(): return False
-        return len(normalized.split()) >= 2 or "?" in text or len(text) >= 12 or bool(location)
+        if not normalized:
+            return False
+        if normalized in {"hi", "hello", "hey", "ok", "okay", "ha", "haa", "yes", "no", "done", "thanks", "bye"}:
+            return False
+        live_markers = ("latest", "today", "current", "right now", "news", "weather", "price", "stock price",
+                        "score", "schedule", "traffic", "near me", "nearby", "open now", "live", "recent")
+        research_markers = ("search web", "look up", "find online", "source", "sources", "citation", "verify online",
+                            "on the internet", "according to")
+        return bool(location and any(m in normalized for m in live_markers) or
+                    any(m in normalized for m in live_markers + research_markers) or
+                    plan.requires_verification)
 
 
 _core = AgentCore()
 scheduler.start()
 
 
-def get_agent_core() -> AgentCore: return _core
+def get_agent_core() -> AgentCore:
+    return _core
 
 
 def run_agent(query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
