@@ -7,9 +7,11 @@ from agent.executor import ExecutionResult
 from agent.knowledge import build_knowledge_context
 from agent.location_context import format_location_context, resolve_location
 from agent.planner import create_plan
+from agent.web_task_intake import try_create_web_task
 from ai.agent import AgentError, generate
 from search.tavily import TavilyError, format_results, is_configured as is_tavily_configured, search as tavily_search
 from telegram.delivery import deliver_previous_answer, is_delivery_request
+from agent.task_scheduler import scheduler
 
 
 class AgentCore:
@@ -17,7 +19,7 @@ class AgentCore:
 
     def __init__(self):
         self.name = "My AI Agent Core"
-        self.version = "1.5.1"
+        self.version = "1.5.2"
         self.evolution_enabled = True
 
     def run(self, query: str, context: Optional[Dict[str, Any]] = None) -> ExecutionResult:
@@ -36,6 +38,13 @@ class AgentCore:
                 skill="telegram_delivery",
                 metadata={"action": "telegram_delivery", "sent": sent},
             )
+
+        scheduled_result = try_create_web_task(
+            query=query,
+            user_id=context.get("user_id"),
+        )
+        if scheduled_result is not None:
+            return scheduled_result
 
         plan = create_plan(query)
         user_id = context.get("user_id")
@@ -135,6 +144,9 @@ class AgentCore:
             "ACTION POLICY:",
             "A Telegram delivery request means actually deliver the referenced previous answer/result; it is not a request for Telegram setup instructions.",
             "Do not invent successful external actions. The application executes external actions deterministically.",
+            "SCHEDULED TASK POLICY:",
+            "When the user gives a task with an explicit clock time, the application persists it as a scheduled task and sends the reminder/report through the configured Telegram destination at that time.",
+            "Never claim a scheduled task was saved unless the scheduler actually persisted it.",
             "",
             "SELECTED AGENT PLAN:", "\n".join(skill_lines),
             "", "USER QUESTION:", query,
@@ -211,6 +223,11 @@ class AgentCore:
 
 
 _core = AgentCore()
+
+# The Streamlit process is the long-running worker in the Render deployment.
+# Start the persistent scheduler here so scheduled tasks continue running
+# even when the browser is closed or no new chat message arrives.
+scheduler.start()
 
 
 def get_agent_core() -> AgentCore:
