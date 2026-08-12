@@ -30,11 +30,7 @@ class VerifiedClaim:
 
 
 class SourceVerifier:
-    """Score evidence quality and identify corroboration/conflicts.
-
-    This layer does not declare a claim true solely from source count; independent
-    evidence and source quality remain separate signals.
-    """
+    """Score evidence quality and identify corroboration/conflicts."""
 
     TRUSTED_TYPES = {"official", "primary", "academic", "government", "documentation"}
 
@@ -63,7 +59,7 @@ class SourceVerifier:
         confidence = self._clamp(0.65 * support_score + 0.35 * corroboration - conflict_penalty)
         if conflicts:
             status = "conflicted"
-        elif confidence >= 0.75:
+        elif support_score >= 0.85 and confidence >= 0.70:
             status = "strongly_supported"
         elif confidence >= 0.45:
             status = "partially_supported"
