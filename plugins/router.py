@@ -25,6 +25,11 @@ class CapabilityRouter:
             "mobile app", "android app", "ios app", "dashboard", "saas", "prototype",
             "replit", "deploy app", "publish app",
         ),
+        "outlook_calendar": (
+            "calendar", "outlook calendar", "meeting", "meetings", "appointment", "appointments",
+            "schedule", "scheduling", "event", "events", "free time", "availability",
+            "reminder", "reschedule", "cancel meeting", "accept meeting", "decline meeting",
+        ),
         "coder": (
             "code", "coding", "python", "javascript", "typescript", "debug", "bug",
             "error", "refactor", "program", "script", "function", "class", "api", "sql",
