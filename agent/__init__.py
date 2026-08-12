@@ -1,42 +1,15 @@
-"""
-My AI Agent orchestration package.
+"""My AI Agent core package.
 
-This package contains:
-- Routing
-- Planning
-- Execution
-- Core agent orchestration
+The runtime keeps the hot path lightweight: app -> AgentCore -> capability
+router -> selected external capability/provider. Optional integrations are
+loaded lazily by the components that need them.
 """
 
-from agent.core import (
-    AgentCore,
-    get_agent_core,
-    run_agent,
-)
-
-from agent.executor import (
-    AgentExecutor,
-    ExecutionResult,
-    execute_query,
-    register_skill_handler,
-)
-
-from agent.planner import (
-    AgentPlan,
-    PlanStep,
-    create_plan,
-)
+from agent.core import AgentCore, ExecutionResult, get_agent_core, run_agent
 
 __all__ = [
     "AgentCore",
-    "AgentExecutor",
-    "AgentPlan",
-    "AgentPlan",
     "ExecutionResult",
-    "PlanStep",
-    "create_plan",
-    "execute_query",
     "get_agent_core",
-    "register_skill_handler",
     "run_agent",
 ]
