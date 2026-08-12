@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -30,11 +31,22 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_chat
 ON scheduled_tasks(chat_id, created_at DESC);
 """
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
 
 def ensure_task_schema() -> None:
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(TASK_SCHEMA)
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(TASK_SCHEMA)
+        _SCHEMA_READY = True
 
 
 def create_task(
@@ -44,6 +56,7 @@ def create_task(
     due_at: datetime,
     timezone: str = "Asia/Kolkata",
 ) -> int:
+    ensure_task_schema()
     row = execute(
         """
         INSERT INTO scheduled_tasks (
@@ -70,6 +83,7 @@ def create_task(
 
 
 def claim_due_tasks(limit: int = 20) -> List[Dict[str, Any]]:
+    ensure_task_schema()
     safe_limit = max(1, min(int(limit), 100))
 
     with get_connection() as connection:
@@ -128,6 +142,7 @@ def complete_task(
     task_id: int,
     result: str,
 ) -> None:
+    ensure_task_schema()
     execute(
         """
         UPDATE scheduled_tasks
@@ -147,6 +162,7 @@ def retry_task(
     error: str,
     max_attempts: int = 3,
 ) -> None:
+    ensure_task_schema()
     execute(
         """
         UPDATE scheduled_tasks
@@ -175,6 +191,7 @@ def list_tasks(
     chat_id: str,
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
+    ensure_task_schema()
     safe_limit = max(1, min(int(limit), 50))
     rows = execute(
         f"""
@@ -219,6 +236,7 @@ def cancel_task(
     task_id: int,
     chat_id: str,
 ) -> bool:
+    ensure_task_schema()
     row = execute(
         """
         UPDATE scheduled_tasks
