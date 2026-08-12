@@ -451,6 +451,16 @@ class TelegramBot:
         if not message:
             return
 
+        # Scheduled tasks are captured before the normal AI handler so a
+        # timed request is persisted instead of being treated as ordinary chat.
+        try:
+            from agent.task_scheduler import try_schedule_message
+
+            if try_schedule_message(message):
+                return
+        except Exception:
+            pass
+
         if not self.message_handler:
             return
 
