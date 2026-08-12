@@ -20,7 +20,7 @@ from config import (
 )
 from database.chat_history import list_recent_chats, load_chat, save_chat
 from database.tasks import list_tasks
-from ui.experience import apply as apply_ui, render_empty_state, render_header as render_optimized_header, thinking_status, finish_status, fail_status, elapsed_text
+from ui.experience import apply as apply_ui, render_empty_state, render_header as render_optimized_header, thinking_status, finish_status, fail_status
 
 APP_NAME = "My AI Agent"
 APP_VERSION = "1.7.0"
@@ -422,7 +422,7 @@ def handle_prompt(prompt: str) -> None:
                 provider = clean_text(result.provider)
                 model = clean_text((result.metadata or {}).get("model"))
                 append_message("assistant", answer, provider=provider, model=model)
-                finish_status(status, f"Response ready • {elapsed_text(status._root.container._dg if False else 0):s}" if False else "Response ready")
+                finish_status(status, "Response ready")
                 st.markdown(answer)
                 st.caption(f"Model: {provider or 'Unknown'} • {model or 'Unknown'}")
         except Exception as exc:
