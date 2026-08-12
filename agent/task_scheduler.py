@@ -20,13 +20,16 @@ from database.tasks import (
 from telegram.bot import send_message
 
 DEFAULT_TIMEZONE = "Asia/Kolkata"
-POLL_INTERVAL_SECONDS = 0.5
+POLL_INTERVAL_SECONDS = 2.0
 MAX_TASK_ATTEMPTS = 3
 
 _TIME_PATTERN = re.compile(r"(?<!\d)(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?!\w)", re.IGNORECASE)
 _TASK_HINTS = ("task", "remind", "reminder", "remember", "yaad", "yaad dil", "karna", "karo", "kar do", "jana", "jaana", "jao", "bhejna", "bhej", "call", "meeting", "school", "pickup", "pick up", "send", "do this", "go to", "mujhe")
 _DATE_TOMORROW = ("tomorrow", "kal", "next day")
 _DATE_TODAY = ("today", "aaj")
+
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
 
 
 def _clean_text(value: object) -> str:
@@ -194,10 +197,15 @@ def _execute_task(task: dict) -> None:
 
 
 def _scheduler_loop(stop_event: threading.Event) -> None:
+    global _SCHEMA_READY
     while not stop_event.is_set():
         try:
             if DATABASE_URL and TELEGRAM_BOT_TOKEN:
-                ensure_task_schema()
+                if not _SCHEMA_READY:
+                    with _SCHEMA_LOCK:
+                        if not _SCHEMA_READY:
+                            ensure_task_schema()
+                            _SCHEMA_READY = True
                 for task in claim_due_tasks(limit=20):
                     _execute_task(task)
         except Exception:
@@ -209,24 +217,27 @@ class TaskScheduler:
     def __init__(self) -> None:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
 
     @property
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
     def start(self) -> None:
-        if self.running:
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=_scheduler_loop, args=(self._stop_event,), name="scheduled-task-worker", daemon=True)
-        self._thread.start()
+        with self._lock:
+            if self.running:
+                return
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=_scheduler_loop, args=(self._stop_event,), name="scheduled-task-worker", daemon=True)
+            self._thread.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        thread = self._thread
+        with self._lock:
+            self._stop_event.set()
+            thread = self._thread
+            self._thread = None
         if thread and thread.is_alive():
             thread.join(timeout=2)
-        self._thread = None
 
 
 scheduler = TaskScheduler()
