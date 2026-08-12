@@ -30,6 +30,11 @@ class CapabilityRouter:
             "schedule", "scheduling", "event", "events", "free time", "availability",
             "reminder", "reschedule", "cancel meeting", "accept meeting", "decline meeting",
         ),
+        "file_storage": (
+            "dropbox", "cloud storage", "cloud file", "cloud files", "upload file", "upload files",
+            "download file", "download files", "save to cloud", "save file to cloud",
+            "list files", "find file", "find files", "share file", "share files",
+        ),
         "coder": (
             "code", "coding", "python", "javascript", "typescript", "debug", "bug",
             "error", "refactor", "program", "script", "function", "class", "api", "sql",
@@ -80,7 +85,11 @@ class CapabilityRouter:
             "reason": route.reason,
             "confidence": route.confidence,
             "fan_out": False,
-            "external_service": "Replit" if route.capability == "app_development" else None,
+            "external_service": {
+                "app_development": "Replit",
+                "outlook_calendar": "Microsoft Outlook Calendar",
+                "file_storage": "Dropbox",
+            }.get(route.capability),
         }
 
 
