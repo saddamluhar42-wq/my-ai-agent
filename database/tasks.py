@@ -10,7 +10,7 @@ from database.connection import execute, get_connection
 TASK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
     id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT,
     chat_id TEXT NOT NULL,
     task_text TEXT NOT NULL,
     due_at TIMESTAMPTZ NOT NULL,
