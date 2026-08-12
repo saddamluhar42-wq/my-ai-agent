@@ -9,41 +9,20 @@ import streamlit as st
 from agent.core import run_agent
 from ai.agent import AgentError, generate_image
 from config import (
-    ANTHROPIC_API_KEY,
-    ANTHROPIC_MODEL,
-    DEEPSEEK_API_KEY,
-    DEEPSEEK_MODEL,
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
-    KIMI_API_KEY,
-    KIMI_MODEL,
-    OPENAI_API_KEY,
-    OPENAI_MODEL,
-    OPENROUTER_API_KEY,
-    OPENROUTER_MODEL,
-    XAI_API_KEY,
-    XAI_MODEL,
-    YOU_API_KEY,
-    YOU_MODEL,
-    HF_TOKEN,
-    HF_IMAGE_MODEL,
-    TELEGRAM_BOT_TOKEN,
+    ANTHROPIC_API_KEY, ANTHROPIC_MODEL, DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
+    GEMINI_API_KEY, GEMINI_MODEL, KIMI_API_KEY, KIMI_MODEL,
+    OPENAI_API_KEY, OPENAI_MODEL, OPENROUTER_API_KEY, OPENROUTER_MODEL,
+    XAI_API_KEY, XAI_MODEL, YOU_API_KEY, YOU_MODEL,
+    HF_TOKEN, HF_TOKEN_2, HF_TOKEN_3, HF_IMAGE_MODEL, TELEGRAM_BOT_TOKEN,
 )
 from providers.video.bootstrap import initialize_video_system
 from providers.video.manager import generate_video
-
 
 APP_NAME = "My AI Agent"
 APP_VERSION = "1.3.1"
 MAX_FILE_SIZE_MB = 20
 
-st.set_page_config(
-    page_title=APP_NAME,
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
+st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="expanded")
 
 @st.cache_resource
 def boot_video_system():
@@ -53,20 +32,11 @@ def boot_video_system():
     except Exception as exc:
         return None, str(exc)
 
-
 def initialize_state() -> None:
-    defaults = {
-        "messages": [],
-        "recent_context": [],
-        "preferred_provider": "Auto",
-        "file_context": "",
-        "uploaded_names": [],
-        "history": [],
-    }
+    defaults = {"messages": [], "recent_context": [], "preferred_provider": "Auto", "file_context": "", "uploaded_names": [], "history": []}
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
-
 
 def safe_read_file(uploaded_file) -> str:
     name = uploaded_file.name.lower()
@@ -83,12 +53,10 @@ def safe_read_file(uploaded_file) -> str:
         return "\n".join(p.text for p in doc.paragraphs)
     return raw.decode("utf-8", errors="replace")
 
-
 def process_files(files) -> None:
     if not files:
         return
-    chunks = []
-    names = []
+    chunks, names = [], []
     for uploaded in files:
         try:
             text = safe_read_file(uploaded)
@@ -100,18 +68,16 @@ def process_files(files) -> None:
         st.session_state["file_context"] = "\n\n---\n\n".join(chunks)
         st.session_state["uploaded_names"] = names
 
-
 def clean_text(value: object) -> str:
     return str(value or "").strip()
 
-
 def model_connection_status() -> list[tuple[str, bool, str]]:
-    """Show exactly the model/service connections represented in Render Environment."""
+    hf_configured = bool(HF_TOKEN or HF_TOKEN_2 or HF_TOKEN_3)
     return [
         ("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL),
         ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL),
         ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL),
-        ("Hugging Face", bool(HF_TOKEN), HF_IMAGE_MODEL),
+        ("Hugging Face", hf_configured, HF_IMAGE_MODEL),
         ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL),
         ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL),
         ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL),
@@ -119,7 +85,6 @@ def model_connection_status() -> list[tuple[str, bool, str]]:
         ("xAI", bool(XAI_API_KEY), XAI_MODEL),
         ("You.com", bool(YOU_API_KEY), YOU_MODEL),
     ]
-
 
 def add_history_entry(prompt: str) -> None:
     prompt = clean_text(prompt)
@@ -129,7 +94,6 @@ def add_history_entry(prompt: str) -> None:
     history[:] = [item for item in history if item != prompt]
     history.insert(0, prompt)
     del history[20:]
-
 
 def render_history() -> None:
     history = st.session_state.get("history", [])
@@ -142,7 +106,6 @@ def render_history() -> None:
             st.session_state["history_selected"] = item
             st.info("History item selected. Start a new message to continue this topic.")
 
-
 def render_model_connections() -> None:
     connected = 0
     connections = model_connection_status()
@@ -154,12 +117,10 @@ def render_model_connections() -> None:
             st.caption(f"○ {name} — not connected")
     st.caption(f"{connected}/{len(connections)} connections configured")
 
-
 def render_sidebar() -> None:
     with st.sidebar:
         st.markdown(f"## 🤖 {APP_NAME}")
         st.caption(f"v{APP_VERSION} • Streamlit direct mode")
-
         st.divider()
         if st.button("＋ New Chat", use_container_width=True, type="primary"):
             st.session_state["messages"] = []
@@ -167,55 +128,34 @@ def render_sidebar() -> None:
             st.session_state["file_context"] = ""
             st.session_state["uploaded_names"] = []
             st.rerun()
-
         with st.expander("🕘 History", expanded=True):
             render_history()
-
         with st.expander("🔌 Model Connections", expanded=True):
             render_model_connections()
-
         st.divider()
         st.subheader("AI Provider")
-        providers = [
-            "Auto", "Anthropic", "DeepSeek", "Gemini", "Kimi",
-            "OpenAI", "OpenRouter", "xAI", "You.com",
-        ]
+        providers = ["Auto", "Anthropic", "DeepSeek", "Gemini", "Kimi", "OpenAI", "OpenRouter", "xAI", "You.com"]
         current_provider = st.session_state.get("preferred_provider", "Auto")
-        provider = st.selectbox(
-            "Text provider",
-            providers,
-            index=providers.index(current_provider) if current_provider in providers else 0,
-            label_visibility="collapsed",
-        )
+        provider = st.selectbox("Text provider", providers, index=providers.index(current_provider) if current_provider in providers else 0, label_visibility="collapsed")
         st.session_state["preferred_provider"] = provider
-
         st.divider()
         st.subheader("Files")
-        files = st.file_uploader(
-            "Upload files",
-            type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-        )
+        files = st.file_uploader("Upload files", type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"], accept_multiple_files=True, label_visibility="collapsed")
         if files:
             process_files(files)
         if st.session_state.get("uploaded_names"):
             st.caption("Loaded: " + ", ".join(st.session_state["uploaded_names"]))
-
         st.divider()
         st.caption("API keys remain in Render Environment Variables and are never displayed.")
-
 
 def render_header() -> None:
     st.title("My AI Agent")
     st.caption("Chat • Image Generation • Video Generation")
 
-
 def append_message(role: str, content: str, **extra) -> None:
     item = {"role": role, "content": content}
     item.update(extra)
     st.session_state["messages"].append(item)
-
 
 def render_messages() -> None:
     for message in st.session_state.get("messages", []):
@@ -241,7 +181,6 @@ def render_messages() -> None:
             else:
                 st.markdown(clean_text(message.get("content")))
 
-
 def generate_image_request(prompt: str) -> None:
     append_message("user", prompt)
     with st.chat_message("assistant"):
@@ -260,7 +199,6 @@ def generate_image_request(prompt: str) -> None:
                 error = f"Image generation failed: {exc}"
                 append_message("assistant", error)
                 st.error(error)
-
 
 def generate_video_request(prompt: str) -> None:
     append_message("user", prompt)
@@ -285,7 +223,6 @@ def generate_video_request(prompt: str) -> None:
                 append_message("assistant", error)
                 st.error(error)
 
-
 def handle_prompt(prompt: str) -> None:
     prompt = clean_text(prompt)
     if not prompt:
@@ -300,18 +237,9 @@ def handle_prompt(prompt: str) -> None:
     if any(word in lowered for word in video_words):
         generate_video_request(prompt)
         return
-
     append_message("user", prompt)
     recent = st.session_state.get("recent_context", [])[-20:]
-    context = {
-        "user_id": None,
-        "memory_context": "",
-        "file_context": st.session_state.get("file_context", ""),
-        "recent_messages": recent,
-        "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"),
-        "uploaded_files": [],
-    }
-
+    context = {"user_id": None, "memory_context": "", "file_context": st.session_state.get("file_context", ""), "recent_messages": recent, "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"), "uploaded_files": []}
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
@@ -327,13 +255,8 @@ def handle_prompt(prompt: str) -> None:
                 error = f"AI Agent error: {exc}"
                 append_message("assistant", error)
                 st.error(error)
-
-    st.session_state["recent_context"].extend([
-        {"role": "user", "content": prompt},
-        {"role": "assistant", "content": st.session_state["messages"][-1].get("content", "")},
-    ])
+    st.session_state["recent_context"].extend([{ "role": "user", "content": prompt }, { "role": "assistant", "content": st.session_state["messages"][-1].get("content", "") }])
     st.session_state["recent_context"] = st.session_state["recent_context"][-20:]
-
 
 def main() -> None:
     initialize_state()
@@ -344,7 +267,6 @@ def main() -> None:
     prompt = st.chat_input("Message My AI Agent...")
     if prompt:
         handle_prompt(prompt)
-
 
 if __name__ == "__main__":
     main()
