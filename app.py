@@ -2,23 +2,30 @@ from __future__ import annotations
 
 import io
 import os
-import tempfile
 from pathlib import Path
 
 import streamlit as st
 
 from agent.core import run_agent
-from ai.agent import AgentError, generate_image, is_image_generation_available
+from ai.agent import AgentError, generate_image
+from config import (
+    ANTHROPIC_API_KEY,
+    CEREBRAS_API_KEY,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    MISTRAL_API_KEY,
+    OPENROUTER_API_KEY,
+    get_configured_video_providers,
+)
 from providers.video.bootstrap import (
     get_ready_video_providers,
-    get_video_system_status,
     initialize_video_system,
 )
 from providers.video.manager import generate_video
 
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.1"
 MAX_FILE_SIZE_MB = 20
 
 st.set_page_config(
@@ -45,6 +52,7 @@ def initialize_state() -> None:
         "preferred_provider": "Auto",
         "file_context": "",
         "uploaded_names": [],
+        "history": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -93,19 +101,86 @@ def clean_text(value: object) -> str:
     return str(value or "").strip()
 
 
+def model_connection_status() -> list[tuple[str, bool]]:
+    return [
+        ("Gemini", bool(GEMINI_API_KEY)),
+        ("OpenRouter", bool(OPENROUTER_API_KEY)),
+        ("Groq", bool(GROQ_API_KEY)),
+        ("Cerebras", bool(CEREBRAS_API_KEY)),
+        ("Mistral", bool(MISTRAL_API_KEY)),
+        ("Anthropic", bool(ANTHROPIC_API_KEY)),
+    ]
+
+
+def add_history_entry(prompt: str) -> None:
+    prompt = clean_text(prompt)
+    if not prompt:
+        return
+
+    history = st.session_state.setdefault("history", [])
+    history[:] = [item for item in history if item != prompt]
+    history.insert(0, prompt)
+    del history[20:]
+
+
+def render_history() -> None:
+    history = st.session_state.get("history", [])
+    if not history:
+        st.caption("No conversations yet")
+        return
+
+    for index, item in enumerate(history):
+        label = item if len(item) <= 42 else item[:39].rstrip() + "..."
+        if st.button(label, key=f"history_{index}", use_container_width=True):
+            st.session_state["history_selected"] = item
+            st.info("History item selected. Start a new message to continue this topic.")
+
+
+def render_model_connections() -> None:
+    connected = 0
+    for name, configured in model_connection_status():
+        if configured:
+            connected += 1
+            st.success(f"✓ {name} — connected")
+        else:
+            st.caption(f"○ {name} — not connected")
+
+    video_providers = get_configured_video_providers()
+    if video_providers:
+        st.caption("Video: " + ", ".join(provider.title() for provider in video_providers))
+    else:
+        st.caption("Video — no provider connected")
+
+    st.caption(f"{connected}/6 text models connected")
+
+
 def render_sidebar(video_error: str) -> None:
     with st.sidebar:
         st.markdown(f"## 🤖 {APP_NAME}")
         st.caption(f"v{APP_VERSION} • Streamlit direct mode")
 
         st.divider()
+        if st.button("＋ New Chat", use_container_width=True, type="primary"):
+            st.session_state["messages"] = []
+            st.session_state["recent_context"] = []
+            st.session_state["file_context"] = ""
+            st.session_state["uploaded_names"] = []
+            st.rerun()
+
+        with st.expander("🕘 History", expanded=True):
+            render_history()
+
+        with st.expander("🔌 Model Connections", expanded=True):
+            render_model_connections()
+
+        st.divider()
         st.subheader("AI Provider")
+        providers = ["Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral", "Anthropic"]
+        current_provider = st.session_state.get("preferred_provider", "Auto")
         provider = st.selectbox(
             "Text provider",
-            ["Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral", "Anthropic"],
-            index=["Auto", "Gemini", "OpenRouter", "Groq", "Cerebras", "Mistral", "Anthropic"].index(
-                st.session_state.get("preferred_provider", "Auto")
-            ),
+            providers,
+            index=providers.index(current_provider) if current_provider in providers else 0,
             label_visibility="collapsed",
         )
         st.session_state["preferred_provider"] = provider
@@ -135,11 +210,6 @@ def render_sidebar(video_error: str) -> None:
             process_files(files)
         if st.session_state.get("uploaded_names"):
             st.caption("Loaded: " + ", ".join(st.session_state["uploaded_names"]))
-
-        if st.button("New Chat", use_container_width=True):
-            st.session_state["messages"] = []
-            st.session_state["recent_context"] = []
-            st.rerun()
 
         st.divider()
         st.caption("Render Free can sleep after inactivity. The app itself no longer depends on PostgreSQL for chat responses.")
@@ -255,6 +325,7 @@ def handle_prompt(prompt: str) -> None:
     if not prompt:
         return
 
+    add_history_entry(prompt)
     lowered = prompt.lower()
     image_words = ("generate image", "create image", "make image", "image banao", "image bana do", "photo banao", "picture banao")
     video_words = ("generate video", "create video", "make video", "video banao", "video bana do", "video generate")
