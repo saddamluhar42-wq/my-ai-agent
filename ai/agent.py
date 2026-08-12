@@ -11,20 +11,14 @@ from config import (
     ANTHROPIC_API_KEY_2,
     ANTHROPIC_API_KEY_3,
     ANTHROPIC_MODEL,
-    CEREBRAS_API_KEY,
-    CEREBRAS_MODEL,
     DEEPSEEK_API_KEY,
     DEEPSEEK_API_KEY_2,
     DEEPSEEK_API_KEY_3,
     DEEPSEEK_MODEL,
-    GROQ_API_KEY,
-    GROQ_MODEL,
     KIMI_API_KEY,
     KIMI_API_KEY_2,
     KIMI_API_KEY_3,
     KIMI_MODEL,
-    MISTRAL_API_KEY,
-    MISTRAL_MODEL,
     OPENAI_API_KEY,
     OPENAI_API_KEY_2,
     OPENAI_API_KEY_3,
@@ -44,18 +38,15 @@ class AgentError(Exception):
     pass
 
 
-# Provider order is intentionally explicit. Configured providers are tried before
-# OpenRouter so a working direct provider is never silently bypassed.
+# Locked provider lineup and fallback order.
+# Only these providers participate in the primary text-model routing path.
 TEXT_PRIORITY = (
-    "Gemini",
-    "DeepSeek",
     "Anthropic",
     "OpenAI",
-    "xAI",
-    "Groq",
-    "Cerebras",
-    "Mistral",
+    "Gemini",
+    "DeepSeek",
     "Kimi",
+    "xAI",
     "OpenRouter",
     "You.com",
 )
@@ -162,15 +153,12 @@ def _you_search(prompt):
 
 def get_available_providers():
     checks = [
-        ("Gemini", gemini.is_configured()),
-        ("DeepSeek", bool(DEEPSEEK_API_KEY or DEEPSEEK_API_KEY_2 or DEEPSEEK_API_KEY_3)),
         ("Anthropic", anthropic.is_configured()),
         ("OpenAI", bool(OPENAI_API_KEY or OPENAI_API_KEY_2 or OPENAI_API_KEY_3)),
-        ("xAI", bool(XAI_API_KEY or XAI_API_KEY_2 or XAI_API_KEY_3)),
-        ("Groq", bool(GROQ_API_KEY)),
-        ("Cerebras", bool(CEREBRAS_API_KEY)),
-        ("Mistral", bool(MISTRAL_API_KEY)),
+        ("Gemini", gemini.is_configured()),
+        ("DeepSeek", bool(DEEPSEEK_API_KEY or DEEPSEEK_API_KEY_2 or DEEPSEEK_API_KEY_3)),
         ("Kimi", bool(KIMI_API_KEY or KIMI_API_KEY_2 or KIMI_API_KEY_3)),
+        ("xAI", bool(XAI_API_KEY or XAI_API_KEY_2 or XAI_API_KEY_3)),
         ("OpenRouter", openrouter.is_configured()),
         ("You.com", bool(YOU_API_KEY or YOU_API_KEY_2 or YOU_API_KEY_3)),
     ]
@@ -217,32 +205,6 @@ def generate(prompt, preferred_provider=None, temperature=None, max_tokens=None)
 
     for provider in providers:
         try:
-            if provider == "Gemini":
-                if not gemini.is_configured():
-                    raise AgentError("API key not configured")
-                answer = gemini.generate(
-                    prompt=prompt,
-                    temperature=temperature,
-                    max_output_tokens=max_tokens,
-                )
-                return {
-                    "answer": answer,
-                    "provider": "Gemini",
-                    "model": gemini.get_provider_info()["model"],
-                    "type": "text",
-                }
-
-            if provider == "DeepSeek":
-                return _openai_compatible(
-                    "DeepSeek",
-                    [DEEPSEEK_API_KEY, DEEPSEEK_API_KEY_2, DEEPSEEK_API_KEY_3],
-                    "https://api.deepseek.com/chat/completions",
-                    DEEPSEEK_MODEL,
-                    prompt,
-                    temperature,
-                    max_tokens,
-                )
-
             if provider == "Anthropic":
                 if not anthropic.is_configured():
                     raise AgentError("API key not configured")
@@ -269,45 +231,27 @@ def generate(prompt, preferred_provider=None, temperature=None, max_tokens=None)
                     max_tokens,
                 )
 
-            if provider == "xAI":
-                return _openai_compatible(
-                    "xAI",
-                    [XAI_API_KEY, XAI_API_KEY_2, XAI_API_KEY_3],
-                    "https://api.x.ai/v1/chat/completions",
-                    XAI_MODEL,
-                    prompt,
-                    temperature,
-                    max_tokens,
+            if provider == "Gemini":
+                if not gemini.is_configured():
+                    raise AgentError("API key not configured")
+                answer = gemini.generate(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
                 )
+                return {
+                    "answer": answer,
+                    "provider": "Gemini",
+                    "model": gemini.get_provider_info()["model"],
+                    "type": "text",
+                }
 
-            if provider == "Groq":
+            if provider == "DeepSeek":
                 return _openai_compatible(
-                    "Groq",
-                    [GROQ_API_KEY],
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    GROQ_MODEL,
-                    prompt,
-                    temperature,
-                    max_tokens,
-                )
-
-            if provider == "Cerebras":
-                return _openai_compatible(
-                    "Cerebras",
-                    [CEREBRAS_API_KEY],
-                    "https://api.cerebras.ai/v1/chat/completions",
-                    CEREBRAS_MODEL,
-                    prompt,
-                    temperature,
-                    max_tokens,
-                )
-
-            if provider == "Mistral":
-                return _openai_compatible(
-                    "Mistral",
-                    [MISTRAL_API_KEY],
-                    "https://api.mistral.ai/v1/chat/completions",
-                    MISTRAL_MODEL,
+                    "DeepSeek",
+                    [DEEPSEEK_API_KEY, DEEPSEEK_API_KEY_2, DEEPSEEK_API_KEY_3],
+                    "https://api.deepseek.com/chat/completions",
+                    DEEPSEEK_MODEL,
                     prompt,
                     temperature,
                     max_tokens,
@@ -319,6 +263,17 @@ def generate(prompt, preferred_provider=None, temperature=None, max_tokens=None)
                     [KIMI_API_KEY, KIMI_API_KEY_2, KIMI_API_KEY_3],
                     "https://api.moonshot.ai/v1/chat/completions",
                     KIMI_MODEL,
+                    prompt,
+                    temperature,
+                    max_tokens,
+                )
+
+            if provider == "xAI":
+                return _openai_compatible(
+                    "xAI",
+                    [XAI_API_KEY, XAI_API_KEY_2, XAI_API_KEY_3],
+                    "https://api.x.ai/v1/chat/completions",
+                    XAI_MODEL,
                     prompt,
                     temperature,
                     max_tokens,
