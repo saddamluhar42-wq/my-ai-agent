@@ -2,10 +2,11 @@ import os
 
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 RENDER_URL = os.getenv("RENDER_URL", "https://my-ai-agent-q6po.onrender.com")
 
+# Text / chat providers
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -16,7 +17,23 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_API_KEY_2 = os.getenv("ANTHROPIC_API_KEY_2")
 ANTHROPIC_API_KEY_3 = os.getenv("ANTHROPIC_API_KEY_3")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_API_KEY_2 = os.getenv("DEEPSEEK_API_KEY_2")
+DEEPSEEK_API_KEY_3 = os.getenv("DEEPSEEK_API_KEY_3")
+KIMI_API_KEY = os.getenv("KIMI_API_KEY")
+KIMI_API_KEY_2 = os.getenv("KIMI_API_KEY_2")
+KIMI_API_KEY_3 = os.getenv("KIMI_API_KEY_3")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY_2 = os.getenv("OPENAI_API_KEY_2")
+OPENAI_API_KEY_3 = os.getenv("OPENAI_API_KEY_3")
+XAI_API_KEY = os.getenv("XAI_API_KEY")
+XAI_API_KEY_2 = os.getenv("XAI_API_KEY_2")
+XAI_API_KEY_3 = os.getenv("XAI_API_KEY_3")
+YOU_API_KEY = os.getenv("YOU_API_KEY")
+YOU_API_KEY_2 = os.getenv("YOU_API_KEY_2")
+YOU_API_KEY_3 = os.getenv("YOU_API_KEY_3")
 
+# Image providers
 HF_TOKEN = os.getenv("HF_TOKEN")
 HF_TOKEN_2 = os.getenv("HF_TOKEN_2")
 HF_TOKEN_3 = os.getenv("HF_TOKEN_3")
@@ -27,6 +44,7 @@ NVIDIA_API_KEY = NVIDIA_IMAGE_1
 NVIDIA_API_KEY_2 = NVIDIA_IMAGE_2
 NVIDIA_API_KEY_3 = NVIDIA_IMAGE_3
 
+# Video providers
 GOOGLE_VIDEO_API_KEY = os.getenv("GOOGLE_VIDEO_API_KEY")
 GOOGLE_VIDEO_API_KEY_2 = os.getenv("GOOGLE_VIDEO_API_KEY_2")
 GOOGLE_VIDEO_MODEL = os.getenv("GOOGLE_VIDEO_MODEL", "veo")
@@ -54,6 +72,7 @@ VIDEO_REQUEST_TIMEOUT = int(os.getenv("VIDEO_REQUEST_TIMEOUT", "300"))
 VIDEO_POLL_INTERVAL = float(os.getenv("VIDEO_POLL_INTERVAL", "3"))
 VIDEO_MAX_DURATION = int(os.getenv("VIDEO_MAX_DURATION", "300"))
 
+# Model names shown in the UI and used by providers that support model selection.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_MODEL_2 = os.getenv("GEMINI_MODEL_2", "gemini-2.5-flash")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
@@ -62,6 +81,11 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama-3.1-8b")
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+XAI_MODEL = os.getenv("XAI_MODEL", "grok-3-mini")
+YOU_MODEL = os.getenv("YOU_MODEL", "default")
 HF_IMAGE_MODEL = os.getenv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
 NVIDIA_IMAGE_MODEL = os.getenv("NVIDIA_IMAGE_MODEL", "flux.1-dev")
 
@@ -84,7 +108,6 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_B
 
 AI_TEMPERATURE = 0.7
 AI_MAX_OUTPUT_TOKENS = 2048
-# Keep text requests bounded so a dead provider cannot leave Streamlit on "Thinking..." for minutes.
 REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "15"))
 DATABASE_TIMEOUT = 10
 
@@ -97,23 +120,21 @@ TELEGRAM_POLL_TIMEOUT = 50
 TELEGRAM_MESSAGE_LIMIT = 3900
 
 
-def is_gemini_configured(): return bool(GEMINI_API_KEY)
-def is_gemini_2_configured(): return bool(GEMINI_API_KEY_2)
-def is_openrouter_configured(): return bool(OPENROUTER_API_KEY)
-def is_openrouter_2_configured(): return bool(OPENROUTER_API_KEY_2)
+def is_gemini_configured(): return bool(GEMINI_API_KEY or GEMINI_API_KEY_2)
+def is_openrouter_configured(): return bool(OPENROUTER_API_KEY or OPENROUTER_API_KEY_2)
 def is_groq_configured(): return bool(GROQ_API_KEY)
 def is_cerebras_configured(): return bool(CEREBRAS_API_KEY)
 def is_mistral_configured(): return bool(MISTRAL_API_KEY)
 def is_anthropic_configured(): return bool(ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_2 or ANTHROPIC_API_KEY_3)
+def is_deepseek_configured(): return bool(DEEPSEEK_API_KEY or DEEPSEEK_API_KEY_2 or DEEPSEEK_API_KEY_3)
+def is_kimi_configured(): return bool(KIMI_API_KEY or KIMI_API_KEY_2 or KIMI_API_KEY_3)
+def is_openai_configured(): return bool(OPENAI_API_KEY or OPENAI_API_KEY_2 or OPENAI_API_KEY_3)
+def is_xai_configured(): return bool(XAI_API_KEY or XAI_API_KEY_2 or XAI_API_KEY_3)
+def is_you_configured(): return bool(YOU_API_KEY or YOU_API_KEY_2 or YOU_API_KEY_3)
 def is_hf_configured(): return bool(HF_TOKEN or HF_TOKEN_2 or HF_TOKEN_3)
-def is_hf_2_configured(): return bool(HF_TOKEN_2)
-def is_hf_3_configured(): return bool(HF_TOKEN_3)
 def is_nvidia_configured(): return bool(NVIDIA_IMAGE_1 or NVIDIA_IMAGE_2 or NVIDIA_IMAGE_3)
-def is_nvidia_2_configured(): return bool(NVIDIA_IMAGE_2)
-def is_nvidia_3_configured(): return bool(NVIDIA_IMAGE_3)
 
-def get_nvidia_image_keys():
-    return [key for key in [NVIDIA_IMAGE_1, NVIDIA_IMAGE_2, NVIDIA_IMAGE_3] if key]
+def get_nvidia_image_keys(): return [key for key in [NVIDIA_IMAGE_1, NVIDIA_IMAGE_2, NVIDIA_IMAGE_3] if key]
 
 def is_google_video_configured(): return bool(GOOGLE_VIDEO_API_KEY or GOOGLE_VIDEO_API_KEY_2)
 def is_runway_configured(): return bool(RUNWAY_API_KEY1 or RUNWAY_API_KEY2 or RUNWAY_API_KEY3)
@@ -143,12 +164,11 @@ def is_telegram_webhook_secret_configured(): return bool(TELEGRAM_WEBHOOK_SECRET
 
 def get_config_status():
     return {
-        "gemini": is_gemini_configured(), "gemini_2": is_gemini_2_configured(),
-        "openrouter": is_openrouter_configured(), "openrouter_2": is_openrouter_2_configured(),
+        "gemini": is_gemini_configured(), "openrouter": is_openrouter_configured(),
         "groq": is_groq_configured(), "cerebras": is_cerebras_configured(), "mistral": is_mistral_configured(),
-        "anthropic": is_anthropic_configured(),
-        "huggingface": is_hf_configured(), "huggingface_2": is_hf_2_configured(), "huggingface_3": is_hf_3_configured(),
-        "nvidia": is_nvidia_configured(), "nvidia_2": is_nvidia_2_configured(), "nvidia_3": is_nvidia_3_configured(),
+        "anthropic": is_anthropic_configured(), "deepseek": is_deepseek_configured(), "kimi": is_kimi_configured(),
+        "openai": is_openai_configured(), "xai": is_xai_configured(), "you": is_you_configured(),
+        "huggingface": is_hf_configured(), "nvidia": is_nvidia_configured(),
         "google_video": is_google_video_configured(), "runway_video": is_runway_configured(), "luma_video": is_luma_configured(), "kling_video": is_kling_configured(), "replicate_video": is_replicate_configured(),
         "video_default_provider": VIDEO_DEFAULT_PROVIDER, "configured_video_providers": get_configured_video_providers(),
         "tavily": is_tavily_configured(), "database": is_database_configured(), "telegram": is_telegram_configured(),
