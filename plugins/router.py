@@ -19,6 +19,12 @@ class CapabilityRouter:
     """Fast deterministic first-pass router with no model/network call."""
 
     RULES = {
+        "orchestrator": (
+            "orchestrate", "orchestrator", "orchestration", "manage skills", "skill manager",
+            "manage skills", "execute skills", "run skills", "skill execution", "manage tools",
+            "execute tools", "select tools", "select plugin", "choose plugin", "delegate task",
+            "delegate tasks", "coordinate agents", "coordinate skills", "workflow orchestration",
+        ),
         "app_development": (
             "build an app", "build app", "create an app", "create app", "make an app",
             "make app", "develop an app", "develop app", "website", "web app",
@@ -85,6 +91,7 @@ class CapabilityRouter:
     }
 
     EXTERNAL_SERVICES = {
+        "orchestrator": "Astral Orchestrator",
         "app_development": "Replit",
         "openai_developer": "OpenAI Platform",
         "outlook_calendar": "Microsoft Outlook Calendar",
