@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from api.openai_compat import chat_completion
 
-app = FastAPI(title="My AI Agent API", version="1.1.0")
+app = FastAPI(title="My AI Agent API", version="1.2.0")
 
 
 class ChatMessage(BaseModel):
@@ -51,23 +51,12 @@ def models(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     verify_key(authorization)
     return {
         "object": "list",
-        "data": [
-            {
-                "id": "my-ai-agent",
-                "object": "model",
-                "owned_by": "my-ai-agent",
-            }
-        ],
+        "data": [{"id": "my-ai-agent", "object": "model", "owned_by": "my-ai-agent"}],
     }
 
 
 def _stream_response(result: dict[str, Any]) -> Iterator[str]:
-    """Return an OpenAI-compatible SSE stream from the completed agent answer.
-
-    The agent itself currently produces a complete answer rather than token-level
-    streaming. We therefore send that answer as one streamed content chunk so
-    clients that require stream=true, such as Airgap, can consume it correctly.
-    """
+    """Emit a completed answer as small SSE chunks for compatible clients."""
     choice = result.get("choices", [{}])[0]
     message = choice.get("message", {})
     content = message.get("content", "") or ""
@@ -78,28 +67,19 @@ def _stream_response(result: dict[str, Any]) -> Iterator[str]:
         "id": completion_id,
         "object": "chat.completion.chunk",
         "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"role": "assistant"},
-                "finish_reason": None,
-            }
-        ],
+        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
     }
     yield f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n"
 
-    if content:
+    # The provider adapter currently returns a completed answer. Chunking it here
+    # prevents clients from rendering one giant payload while keeping the API contract.
+    for index in range(0, len(content), 120):
+        piece = content[index:index + 120]
         content_chunk = {
             "id": completion_id,
             "object": "chat.completion.chunk",
             "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"content": content},
-                    "finish_reason": None,
-                }
-            ],
+            "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}],
         }
         yield f"data: {json.dumps(content_chunk, ensure_ascii=False)}\n\n"
 
@@ -107,13 +87,7 @@ def _stream_response(result: dict[str, Any]) -> Iterator[str]:
         "id": completion_id,
         "object": "chat.completion.chunk",
         "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop",
-            }
-        ],
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
     }
     yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
@@ -129,16 +103,18 @@ def completions(
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages must not be empty.")
 
-    user_messages = [
-        m.content.strip()
-        for m in request.messages
-        if m.role == "user" and m.content.strip()
+    cleaned_messages = [
+        {"role": m.role, "content": m.content.strip()[:12000]}
+        for m in request.messages[-20:]
+        if m.content.strip()
     ]
+    user_messages = [m["content"] for m in cleaned_messages if m["role"] == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="At least one user message is required.")
 
     query = user_messages[-1]
-    result = chat_completion(query)
+    context = {"recent_messages": cleaned_messages[:-1], "preferred_provider": None}
+    result = chat_completion(query, context=context)
     result["model"] = request.model or "my-ai-agent"
 
     if request.stream:
@@ -146,8 +122,9 @@ def completions(
             _stream_response(result),
             media_type="text/event-stream",
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-cache, no-transform",
                 "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
             },
         )
 
