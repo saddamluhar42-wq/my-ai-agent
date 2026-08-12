@@ -1,9 +1,4 @@
-"""Capability-aware model routing for Ultra Legend AI Core.
-
-The router chooses a preferred provider without removing the existing fallback
-chain. Explicit user/provider selection always wins; otherwise task signals
-choose a suitable first model and the existing engine can fail over safely.
-"""
+"""Capability-aware model routing for Ultra Legend AI Core."""
 
 from __future__ import annotations
 
@@ -39,13 +34,25 @@ def choose_provider(
     task = classify_task(query, skill)
 
     preferences = {
-        "coding": ("DeepSeek", "OpenAI", "Anthropic", "Gemini"),
-        "research": ("Gemini", "Anthropic", "OpenAI", "DeepSeek"),
-        "creative": ("Gemini", "OpenAI", "Anthropic", "Kimi"),
-        "reasoning": ("Anthropic", "OpenAI", "Gemini", "DeepSeek"),
-        "general": ("Gemini", "DeepSeek", "Anthropic", "Kimi", "OpenAI"),
+        "coding": (
+            "DeepSeek", "OpenAI", "Anthropic", "Groq", "Cerebras", "Gemini", "Mistral", "OpenRouter"
+        ),
+        "research": (
+            "Gemini", "Anthropic", "OpenAI", "Mistral", "DeepSeek", "Cerebras", "OpenRouter"
+        ),
+        "creative": (
+            "Gemini", "OpenAI", "Anthropic", "Kimi", "Mistral", "Groq", "OpenRouter"
+        ),
+        "reasoning": (
+            "Anthropic", "OpenAI", "Gemini", "DeepSeek", "Cerebras", "Mistral", "OpenRouter"
+        ),
+        "general": (
+            "Gemini", "DeepSeek", "Anthropic", "Groq", "Cerebras", "Mistral", "Kimi", "OpenAI", "OpenRouter"
+        ),
     }
+
     for provider in preferences[task]:
         if provider.lower() in available:
             return available[provider.lower()], f"capability_route:{task}"
+
     return None, f"fallback_route:{task}"
