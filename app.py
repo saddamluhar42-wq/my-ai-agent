@@ -19,7 +19,7 @@ from providers.video.bootstrap import initialize_video_system
 from providers.video.manager import generate_video
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 MAX_FILE_SIZE_MB = 20
 
 st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="expanded")
@@ -117,6 +117,8 @@ def render_messages() -> None:
                 if message.get("provider"): st.caption(f"Model: {message['provider']} • {message.get('model','Unknown')}")
 
 def generate_image_request(prompt: str) -> None:
+    with st.chat_message("user"):
+        st.markdown(prompt)
     append_message("user",prompt)
     with st.chat_message("assistant"):
         with st.spinner("Generating image..."):
@@ -128,6 +130,8 @@ def generate_image_request(prompt: str) -> None:
             except Exception as exc: error=f"Image generation failed: {exc}"; append_message("assistant",error); st.error(error)
 
 def generate_video_request(prompt: str) -> None:
+    with st.chat_message("user"):
+        st.markdown(prompt)
     append_message("user",prompt)
     with st.chat_message("assistant"):
         with st.spinner("Generating video... This can take a few minutes."):
@@ -146,7 +150,10 @@ def handle_prompt(prompt: str) -> None:
     add_history_entry(prompt); lowered=prompt.lower()
     if any(word in lowered for word in ("generate image","create image","make image","image banao","image bana do","photo banao","picture banao")): generate_image_request(prompt); return
     if any(word in lowered for word in ("generate video","create video","make video","video banao","video bana do","video generate")): generate_video_request(prompt); return
-    append_message("user",prompt); recent=st.session_state.get("recent_context",[])[-20:]; context={"user_id":None,"memory_context":"","file_context":st.session_state.get("file_context",""),"recent_messages":recent,"preferred_provider":None if st.session_state.get("preferred_provider")=="Auto" else st.session_state.get("preferred_provider"),"uploaded_files":[]}
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    append_message("user",prompt)
+    recent=st.session_state.get("recent_context",[])[-20:]; context={"user_id":None,"memory_context":"","file_context":st.session_state.get("file_context",""),"recent_messages":recent,"preferred_provider":None if st.session_state.get("preferred_provider")=="Auto" else st.session_state.get("preferred_provider"),"uploaded_files":[]}
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
