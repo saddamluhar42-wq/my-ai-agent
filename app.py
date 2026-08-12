@@ -26,7 +26,7 @@ from providers.video.bootstrap import initialize_video_system
 from providers.video.manager import generate_video
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 MAX_FILE_SIZE_MB = 20
 
 TIME_LOCATIONS = {
@@ -42,12 +42,7 @@ TIME_LOCATIONS = {
     "Singapore": ("Asia/Singapore", "Singapore"),
 }
 
-st.set_page_config(
-    page_title=APP_NAME,
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="expanded")
 
 
 @st.cache_resource
@@ -60,17 +55,10 @@ def boot_video_system():
 
 def initialize_state() -> None:
     defaults = {
-        "messages": [],
-        "recent_context": [],
-        "preferred_provider": "Auto",
-        "file_context": "",
-        "uploaded_names": [],
-        "pending_time_prompt": None,
-        "pending_time_location": None,
-        "last_time_location": "India — IST",
-        "session_key": str(uuid.uuid4()),
-        "chat_title": "New Chat",
-        "history_loaded": False,
+        "messages": [], "recent_context": [], "preferred_provider": "Auto", "file_context": "",
+        "uploaded_names": [], "pending_time_prompt": None, "pending_time_location": None,
+        "last_time_location": "India — IST", "session_key": str(uuid.uuid4()),
+        "chat_title": "New Chat", "history_loaded": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -112,38 +100,20 @@ def process_files(files) -> None:
 
 def is_time_query(prompt: str) -> bool:
     text = prompt.lower()
-    phrases = (
-        "time kya", "time bata", "kitne baje", "kitna time", "abhi time", "current time",
-        "local time", "what time", "tell me the time", "time now", "samay kya", "samay bata",
-        "waqt kya", "waqt bata", "clock time", "abhi kitne baje",
-    )
-    return any(phrase in text for phrase in phrases) or (
-        "time" in text and any(word in text for word in ("abhi", "current", "local", "now"))
-    )
+    phrases = ("time kya", "time bata", "kitne baje", "kitna time", "abhi time", "current time", "local time", "what time", "tell me the time", "time now", "samay kya", "samay bata", "waqt kya", "waqt bata", "clock time", "abhi kitne baje")
+    return any(phrase in text for phrase in phrases) or ("time" in text and any(word in text for word in ("abhi", "current", "local", "now")))
 
 
 def is_image_query(prompt: str) -> bool:
     text = clean_text(prompt).lower()
     image_terms = ("image", "photo", "picture", "photograph", "pic", "tasveer", "तस्वीर", "फोटो", "चित्र")
-    generation_terms = (
-        "generate", "generation", "create", "make", "banao", "bana do", "banado", "bana de",
-        "bana dena", "chahiye", "tayyar karo", "tayyar kar", "बनाओ", "बना दो", "बनाना", "बना दे",
-        "बना देना", "चाहिए", "तैयार करो", "तैयार कर",
-    )
-    if any(term in text for term in image_terms) and any(term in text for term in generation_terms):
-        return True
-    return any(pattern in text for pattern in (
-        "photo generate", "image generate", "picture generate", "photo banao", "image banao",
-        "picture banao", "photo bana", "image bana", "picture bana", "tasveer banao",
-        "tasveer bana", "फोटो बनाओ", "फोटो बना", "तस्वीर बनाओ", "तस्वीर बना",
-    ))
+    generation_terms = ("generate", "generation", "create", "make", "banao", "bana do", "banado", "bana de", "bana dena", "chahiye", "tayyar karo", "tayyar kar", "बनाओ", "बना दो", "बनाना", "बना दे", "बना देना", "चाहिए", "तैयार करो", "तैयार कर")
+    return any(term in text for term in image_terms) and any(term in text for term in generation_terms)
 
 
 def is_video_query(prompt: str) -> bool:
     text = clean_text(prompt).lower()
-    return any(term in text for term in ("video", "वीडियो")) and any(
-        term in text for term in ("generate", "create", "make", "banao", "bana do", "बनाओ", "बना दो")
-    )
+    return any(term in text for term in ("video", "वीडियो")) and any(term in text for term in ("generate", "create", "make", "banao", "bana do", "बनाओ", "बना दो"))
 
 
 def append_message(role: str, content: str, **extra) -> None:
@@ -166,10 +136,7 @@ def persist_current_chat() -> None:
         return
     messages = []
     for message in st.session_state.get("messages", []):
-        item = {
-            "role": message.get("role", "assistant"),
-            "content": clean_text(message.get("content")),
-        }
+        item = {"role": message.get("role", "assistant"), "content": clean_text(message.get("content"))}
         if message.get("provider"):
             item["provider"] = message["provider"]
         if message.get("model"):
@@ -215,27 +182,13 @@ def open_history_chat(session_key: str) -> None:
     st.session_state["session_key"] = chat["session_key"]
     st.session_state["chat_title"] = chat["title"]
     st.session_state["messages"] = chat["messages"]
-    st.session_state["recent_context"] = [
-        {"role": m.get("role"), "content": m.get("content", "")}
-        for m in chat["messages"][-20:]
-    ]
+    st.session_state["recent_context"] = [{"role": m.get("role"), "content": m.get("content", "")} for m in chat["messages"][-20:]]
     st.rerun()
 
 
 def model_connection_status():
     hf_configured = bool(HF_TOKEN or HF_TOKEN_2 or HF_TOKEN_3)
-    return [
-        ("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL),
-        ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL),
-        ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL),
-        ("Hugging Face", hf_configured, HF_IMAGE_MODEL),
-        ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL),
-        ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL),
-        ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL),
-        ("Telegram", bool(TELEGRAM_BOT_TOKEN), "Bot API"),
-        ("xAI", bool(XAI_API_KEY), XAI_MODEL),
-        ("You.com", bool(YOU_API_KEY), YOU_MODEL),
-    ]
+    return [("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL), ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL), ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL), ("Hugging Face", hf_configured, HF_IMAGE_MODEL), ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL), ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL), ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL), ("Telegram", bool(TELEGRAM_BOT_TOKEN), "Bot API"), ("xAI", bool(XAI_API_KEY), XAI_MODEL), ("You.com", bool(YOU_API_KEY), YOU_MODEL)]
 
 
 def render_scheduled_tasks() -> None:
@@ -277,10 +230,7 @@ def render_history() -> None:
         if len(title) > 45:
             title = title[:42].rstrip() + "..."
         updated = chat["updated_at"]
-        if updated:
-            updated_text = updated.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).strftime("%d %b, %I:%M %p").lstrip("0")
-        else:
-            updated_text = ""
+        updated_text = updated.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).strftime("%d %b, %I:%M %p").lstrip("0") if updated else ""
         label = f"{title}\n{updated_text}" if updated_text else title
         if st.button(label, key=f"chat_history_{index}_{chat['session_key']}", use_container_width=True):
             open_history_chat(chat["session_key"])
@@ -315,19 +265,10 @@ def render_sidebar() -> None:
         st.subheader("AI Provider")
         providers = ["Auto", "Anthropic", "DeepSeek", "Gemini", "Kimi", "OpenAI", "OpenRouter", "xAI", "You.com"]
         current = st.session_state.get("preferred_provider", "Auto")
-        st.session_state["preferred_provider"] = st.selectbox(
-            "Text provider", providers,
-            index=providers.index(current) if current in providers else 0,
-            label_visibility="collapsed",
-        )
+        st.session_state["preferred_provider"] = st.selectbox("Text provider", providers, index=providers.index(current) if current in providers else 0, label_visibility="collapsed")
         st.divider()
         st.subheader("Files")
-        files = st.file_uploader(
-            "Upload files",
-            type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-        )
+        files = st.file_uploader("Upload files", type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"], accept_multiple_files=True, label_visibility="collapsed")
         if files:
             process_files(files)
         if st.session_state.get("uploaded_names"):
@@ -456,44 +397,36 @@ def handle_prompt(prompt: str) -> None:
     if is_video_query(prompt):
         generate_video_request(prompt)
         return
-
     with st.chat_message("user"):
         st.markdown(prompt)
     append_message("user", prompt)
-
     if is_time_query(prompt):
         st.session_state["pending_time_prompt"] = prompt
         st.session_state["pending_time_location"] = None
         return
-
     recent = st.session_state.get("recent_context", [])[-20:]
-    context = {
-        "user_id": None,
-        "memory_context": "",
-        "file_context": st.session_state.get("file_context", ""),
-        "recent_messages": recent,
-        "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"),
-        "uploaded_files": [],
-    }
+    context = {"user_id": None, "memory_context": "", "file_context": st.session_state.get("file_context", ""), "recent_messages": recent, "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"), "uploaded_files": []}
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
                 result = run_agent(query=prompt, context=context)
                 if not result.success:
-                    raise AgentError(result.metadata.get("error", "Agent execution failed."))
-                answer = clean_text(result.answer)
-                if not answer:
-                    raise AgentError("Agent returned an empty response.")
-                provider = clean_text(result.provider)
-                model = clean_text((result.metadata or {}).get("model"))
-                append_message("assistant", answer, provider=provider, model=model)
-                st.markdown(answer)
-                st.caption(f"Model: {provider or 'Unknown'} • {model or 'Unknown'}")
+                    exact_error = clean_text((result.metadata or {}).get("error")) or clean_text(result.answer) or "Agent execution failed."
+                    append_message("assistant", exact_error)
+                    st.error(exact_error)
+                else:
+                    answer = clean_text(result.answer)
+                    if not answer:
+                        raise AgentError("Agent returned an empty response.")
+                    provider = clean_text(result.provider)
+                    model = clean_text((result.metadata or {}).get("model"))
+                    append_message("assistant", answer, provider=provider, model=model)
+                    st.markdown(answer)
+                    st.caption(f"Model: {provider or 'Unknown'} • {model or 'Unknown'}")
             except Exception as exc:
                 error = f"AI Agent error: {exc}"
                 append_message("assistant", error)
                 st.error(error)
-
     st.session_state["recent_context"].extend([
         {"role": "user", "content": prompt},
         {"role": "assistant", "content": st.session_state["messages"][-1].get("content", "")},
