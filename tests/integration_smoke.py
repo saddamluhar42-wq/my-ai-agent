@@ -28,6 +28,10 @@ def main() -> None:
         intelligence = MemoryIntelligence(db)
         assert intelligence.rank("Python testing", limit=1)[0].action == "retrieve"
 
+        budget = OperationBudget()
+        budget.consume_tool()
+        assert ProductionHealth(db).check().healthy
+
     graph = [
         GraphEdge("python", "used_for", "automation", 0.9, "software"),
         GraphEdge("automation", "supports", "research", 0.8, "research"),
@@ -62,10 +66,6 @@ def main() -> None:
     benchmark = ContinuousEvaluator().run(lambda task: task.upper(), [EvalCase("1", "ok", "OK")])
     assert benchmark.pass_rate == 1.0
     assert RegressionGate().approve(benchmark)["approved"]
-
-    budget = OperationBudget()
-    budget.consume_tool()
-    assert ProductionHealth(db).check().healthy
 
     core = UltraLegend()
     assert core.health_snapshot()["status"] == "ready"
