@@ -1,0 +1,50 @@
+name: Fix Streamlit navigation icons
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix invalid Streamlit icons
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('app.py')
+          text = app.read_text(encoding='utf-8')
+          text = text.replace('icon="⌂"', 'icon=":material/home:"')
+          text = text.replace('icon="🧩"', 'icon=":material/extension:"')
+          app.write_text(text, encoding='utf-8')
+
+          plugins = Path('pages/2_Plugins.py')
+          text = plugins.read_text(encoding='utf-8')
+          text = text.replace('st.set_page_config(page_title="Plugin Hub", page_icon="🧩", layout="wide")', 'st.set_page_config(page_title="Plugin Hub", page_icon=":material/extension:", layout="wide")')
+          plugins.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit and push fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py pages/2_Plugins.py
+          if git diff --cached --quiet; then
+            echo "No icon changes required."
+            exit 0
+          fi
+          git commit -m "Fix Streamlit navigation and plugin icons"
+          git push origin main
