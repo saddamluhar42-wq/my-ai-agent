@@ -1,9 +1,4 @@
-"""OpenAI-compatible API adapter for My AI Agent.
-
-This module is intentionally framework-agnostic. The web service can import
-`chat_completion` from its HTTP route and return the resulting dictionary as
-JSON. It keeps the mobile client contract compatible with OpenAI clients.
-"""
+"""OpenAI-compatible API adapter for My AI Agent."""
 
 from __future__ import annotations
 
@@ -15,13 +10,24 @@ def chat_completion(
     *,
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run the existing agent and return an OpenAI-compatible response."""
+    """Run the existing agent with bounded conversation context."""
     from agent.core import run_agent
 
-    result = run_agent(query=query, context=context or {})
+    safe_context = dict(context or {})
+    recent = safe_context.get("recent_messages", [])
+    if isinstance(recent, list):
+        safe_context["recent_messages"] = [
+            {"role": str(item.get("role", "")), "content": str(item.get("content", ""))[:12000]}
+            for item in recent[-20:]
+            if isinstance(item, dict) and str(item.get("content", "")).strip()
+        ]
+    else:
+        safe_context["recent_messages"] = []
+
+    result = run_agent(query=query, context=safe_context)
 
     if not result.success:
-        error = result.metadata.get("error", "Agent execution failed.")
+        error = (result.metadata or {}).get("error", "Agent execution failed.")
         raise RuntimeError(error)
 
     metadata = result.metadata or {}
