@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -22,11 +21,9 @@ from config import (
 )
 from database.chat_history import list_recent_chats, load_chat, save_chat
 from database.tasks import list_tasks
-from providers.video.bootstrap import initialize_video_system
-from providers.video.manager import generate_video
 
 APP_NAME = "My AI Agent"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 MAX_FILE_SIZE_MB = 20
 
 TIME_LOCATIONS = {
@@ -43,14 +40,6 @@ TIME_LOCATIONS = {
 }
 
 st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="expanded")
-
-
-@st.cache_resource
-def boot_video_system():
-    try:
-        return initialize_video_system(), ""
-    except Exception as exc:
-        return None, str(exc)
 
 
 def initialize_state() -> None:
@@ -100,13 +89,14 @@ def process_files(files) -> None:
 
 def is_time_query(prompt: str) -> bool:
     text = prompt.lower()
-    phrases = ("time kya", "time bata", "kitne baje", "kitna time", "abhi time", "current time", "local time", "what time", "tell me the time", "time now", "samay kya", "samay bata", "waqt kya", "waqt bata", "clock time", "abhi kitne baje")
-    return any(phrase in text for phrase in phrases) or ("time" in text and any(word in text for word in ("abhi", "current", "local", "now")))
-
-
-def is_video_query(prompt: str) -> bool:
-    text = clean_text(prompt).lower()
-    return any(term in text for term in ("video", "वीडियो")) and any(term in text for term in ("generate", "create", "make", "banao", "bana do", "बनाओ", "बना दो"))
+    phrases = (
+        "time kya", "time bata", "kitne baje", "kitna time", "abhi time",
+        "current time", "local time", "what time", "tell me the time", "time now",
+        "samay kya", "samay bata", "waqt kya", "waqt bata", "clock time", "abhi kitne baje",
+    )
+    return any(phrase in text for phrase in phrases) or (
+        "time" in text and any(word in text for word in ("abhi", "current", "local", "now"))
+    )
 
 
 def append_message(role: str, content: str, **extra) -> None:
@@ -134,12 +124,9 @@ def persist_current_chat() -> None:
             item["provider"] = message["provider"]
         if message.get("model"):
             item["model"] = message["model"]
-        if message.get("type") in ("image", "video"):
-            item["type"] = message["type"]
-            if message.get("type") == "image":
-                item["content"] = item["content"] or "[Generated image]"
-            if message.get("type") == "video":
-                item["content"] = item["content"] or "[Generated video]"
+        if message.get("type") == "image":
+            item["type"] = "image"
+            item["content"] = item["content"] or "[Generated image]"
         messages.append(item)
     if not messages:
         return
@@ -175,13 +162,26 @@ def open_history_chat(session_key: str) -> None:
     st.session_state["session_key"] = chat["session_key"]
     st.session_state["chat_title"] = chat["title"]
     st.session_state["messages"] = chat["messages"]
-    st.session_state["recent_context"] = [{"role": m.get("role"), "content": m.get("content", "")} for m in chat["messages"][-20:]]
+    st.session_state["recent_context"] = [
+        {"role": m.get("role"), "content": m.get("content", "")} for m in chat["messages"][-20:]
+    ]
     st.rerun()
 
 
 def model_connection_status():
     hf_configured = bool(HF_TOKEN or HF_TOKEN_2 or HF_TOKEN_3)
-    return [("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL), ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL), ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL), ("Hugging Face", hf_configured, HF_IMAGE_MODEL), ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL), ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL), ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL), ("Telegram", bool(TELEGRAM_BOT_TOKEN), "Bot API"), ("xAI", bool(XAI_API_KEY), XAI_MODEL), ("You.com", bool(YOU_API_KEY), YOU_MODEL)]
+    return [
+        ("Anthropic", bool(ANTHROPIC_API_KEY), ANTHROPIC_MODEL),
+        ("DeepSeek", bool(DEEPSEEK_API_KEY), DEEPSEEK_MODEL),
+        ("Gemini", bool(GEMINI_API_KEY), GEMINI_MODEL),
+        ("Hugging Face", hf_configured, HF_IMAGE_MODEL),
+        ("Kimi", bool(KIMI_API_KEY), KIMI_MODEL),
+        ("OpenAI", bool(OPENAI_API_KEY), OPENAI_MODEL),
+        ("OpenRouter", bool(OPENROUTER_API_KEY), OPENROUTER_MODEL),
+        ("Telegram", bool(TELEGRAM_BOT_TOKEN), "Bot API"),
+        ("xAI", bool(XAI_API_KEY), XAI_MODEL),
+        ("You.com", bool(YOU_API_KEY), YOU_MODEL),
+    ]
 
 
 def render_scheduled_tasks() -> None:
@@ -223,7 +223,10 @@ def render_history() -> None:
         if len(title) > 45:
             title = title[:42].rstrip() + "..."
         updated = chat["updated_at"]
-        updated_text = updated.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).strftime("%d %b, %I:%M %p").lstrip("0") if updated else ""
+        updated_text = (
+            updated.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).strftime("%d %b, %I:%M %p").lstrip("0")
+            if updated else ""
+        )
         label = f"{title}\n{updated_text}" if updated_text else title
         if st.button(label, key=f"chat_history_{index}_{chat['session_key']}", use_container_width=True):
             open_history_chat(chat["session_key"])
@@ -258,10 +261,19 @@ def render_sidebar() -> None:
         st.subheader("AI Provider")
         providers = ["Auto", "Anthropic", "DeepSeek", "Gemini", "Kimi", "OpenAI", "OpenRouter", "xAI", "You.com"]
         current = st.session_state.get("preferred_provider", "Auto")
-        st.session_state["preferred_provider"] = st.selectbox("Text provider", providers, index=providers.index(current) if current in providers else 0, label_visibility="collapsed")
+        st.session_state["preferred_provider"] = st.selectbox(
+            "Text provider", providers,
+            index=providers.index(current) if current in providers else 0,
+            label_visibility="collapsed",
+        )
         st.divider()
         st.subheader("Files")
-        files = st.file_uploader("Upload files", type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"], accept_multiple_files=True, label_visibility="collapsed")
+        files = st.file_uploader(
+            "Upload files",
+            type=["txt", "md", "csv", "json", "py", "html", "xml", "yaml", "yml", "pdf", "docx"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+        )
         if files:
             process_files(files)
         if st.session_state.get("uploaded_names"):
@@ -272,7 +284,7 @@ def render_sidebar() -> None:
 
 def render_header() -> None:
     st.title("My AI Agent")
-    st.caption("Chat • Image Generation • Video Generation")
+    st.caption("Chat • Image Generation")
     if st.session_state.get("chat_title") and st.session_state["chat_title"] != "New Chat":
         st.caption(f"Chat: {st.session_state['chat_title']}")
 
@@ -284,14 +296,10 @@ def render_messages() -> None:
             if kind == "image" and message.get("image"):
                 st.image(message["image"], use_container_width=True)
                 if message.get("provider"):
-                    st.caption(f"Generated by {message['provider']}" + (f" • {message['model']}" if message.get("model") else ""))
-            elif kind == "video" and message.get("video_path"):
-                path = Path(message["video_path"])
-                if path.exists():
-                    st.video(str(path))
-                    st.download_button("Download video", path.read_bytes(), file_name=path.name, mime="video/mp4", key=f"download_{path.name}")
-                else:
-                    st.error("Generated video file is no longer available.")
+                    st.caption(
+                        f"Generated by {message['provider']}"
+                        + (f" • {message['model']}" if message.get("model") else "")
+                    )
             else:
                 st.markdown(clean_text(message.get("content")))
                 if message.get("provider"):
@@ -315,7 +323,10 @@ def generate_image_request(prompt: str) -> None:
                     raise AgentError("Image provider returned no image.")
                 provider = result.get("provider", "")
                 model = result.get("model", "")
-                append_message("assistant", "[Generated image]", type="image", image=image_data, provider=provider, model=model)
+                append_message(
+                    "assistant", "[Generated image]", type="image", image=image_data,
+                    provider=provider, model=model,
+                )
                 st.image(image_data, use_container_width=True)
                 st.caption(f"Generated by {provider}" + (f" • {model}" if model else ""))
             except Exception as exc:
@@ -327,39 +338,21 @@ def generate_image_request(prompt: str) -> None:
 def render_image_generator() -> None:
     with st.popover("🖼️ Generate Image", use_container_width=True):
         st.markdown("### Image Generator")
-        st.caption("Image sirf yahan se generate hogi. Normal chat mein image/photo/picture words hone par image generate nahi hogi.")
-        image_prompt = st.text_area("Image prompt", placeholder="Example: cinematic realistic village house in Kutch at golden hour...", height=110, key="image_prompt_input")
+        st.caption(
+            "Image sirf yahan se generate hogi. Normal chat mein image/photo/picture words "
+            "hone par image generate nahi hogi."
+        )
+        image_prompt = st.text_area(
+            "Image prompt",
+            placeholder="Example: cinematic realistic village house in Kutch at golden hour...",
+            height=110,
+            key="image_prompt_input",
+        )
         if st.button("Generate Image", type="primary", use_container_width=True, key="generate_image_button"):
             if clean_text(image_prompt):
                 generate_image_request(image_prompt)
             else:
                 st.warning("Pehle image prompt likho.")
-
-
-def generate_video_request(prompt: str) -> None:
-    append_message("user", prompt)
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    with st.chat_message("assistant"):
-        with st.spinner("Generating video... This can take a few minutes."):
-            output_dir = Path("generated_videos")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"video_{os.urandom(8).hex()}.mp4"
-            provider = None if st.session_state.get("preferred_provider", "Auto") == "Auto" else st.session_state["preferred_provider"].lower()
-            try:
-                result = generate_video(prompt=prompt, provider=provider, output_path=str(output_path), fallback=True)
-                if not isinstance(result, dict) or not result.get("success"):
-                    raise AgentError(result.get("error", "Video generation failed.") if isinstance(result, dict) else "Invalid video result.")
-                final_path = Path(result.get("output_path", output_path))
-                if not final_path.exists():
-                    raise AgentError("Video provider reported success but output file was not found.")
-                append_message("assistant", "[Generated video]", type="video", video_path=str(final_path), provider=result.get("provider", provider or "Auto"), model=result.get("model", ""), task_id=result.get("task_id"))
-                st.video(str(final_path))
-                st.download_button("Download video", final_path.read_bytes(), file_name=final_path.name, mime="video/mp4", key=f"download_now_{final_path.name}")
-            except Exception as exc:
-                error = f"Video generation failed: {exc}"
-                append_message("assistant", error)
-                st.error(error)
 
 
 def answer_time_question() -> None:
@@ -371,7 +364,10 @@ def answer_time_question() -> None:
     now = datetime.now(ZoneInfo(tz_name))
     time_text = now.strftime("%I:%M %p").lstrip("0")
     date_text = now.strftime("%d %B %Y")
-    answer = f"Abhi {location_name} me **{time_text}** hai.\n\n📍 Location: {location_name}\n🕒 Time zone: {tz_name}\n📅 Date: {date_text}"
+    answer = (
+        f"Abhi {location_name} me **{time_text}** hai.\n\n"
+        f"📍 Location: {location_name}\n🕒 Time zone: {tz_name}\n📅 Date: {date_text}"
+    )
     append_message("assistant", answer, provider="System Clock", model=tz_name)
     with st.chat_message("assistant"):
         st.markdown(answer)
@@ -400,9 +396,6 @@ def handle_prompt(prompt: str) -> None:
     prompt = clean_text(prompt)
     if not prompt:
         return
-    if is_video_query(prompt):
-        generate_video_request(prompt)
-        return
     with st.chat_message("user"):
         st.markdown(prompt)
     append_message("user", prompt)
@@ -411,7 +404,14 @@ def handle_prompt(prompt: str) -> None:
         st.session_state["pending_time_location"] = None
         return
     recent = st.session_state.get("recent_context", [])[-20:]
-    context = {"user_id": None, "memory_context": "", "file_context": st.session_state.get("file_context", ""), "recent_messages": recent, "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"), "uploaded_files": []}
+    context = {
+        "user_id": None,
+        "memory_context": "",
+        "file_context": st.session_state.get("file_context", ""),
+        "recent_messages": recent,
+        "preferred_provider": None if st.session_state.get("preferred_provider") == "Auto" else st.session_state.get("preferred_provider"),
+        "uploaded_files": [],
+    }
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
@@ -443,7 +443,6 @@ def handle_prompt(prompt: str) -> None:
 
 def main() -> None:
     initialize_state()
-    boot_video_system()
     render_sidebar()
     render_header()
     render_image_generator()
