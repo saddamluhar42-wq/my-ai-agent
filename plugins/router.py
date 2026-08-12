@@ -25,6 +25,11 @@ class CapabilityRouter:
             "mobile app", "android app", "ios app", "dashboard", "saas", "prototype",
             "replit", "deploy app", "publish app",
         ),
+        "openai_developer": (
+            "openai developer", "openai api", "openai sdk", "openai agents", "agents sdk",
+            "openai platform", "openai key", "openai_api_key", "gpt api", "responses api",
+            "chat completions", "openai integration", "build with openai",
+        ),
         "outlook_calendar": (
             "calendar", "outlook calendar", "meeting", "meetings", "appointment", "appointments",
             "schedule", "scheduling", "event", "events", "free time", "availability",
@@ -87,6 +92,7 @@ class CapabilityRouter:
             "fan_out": False,
             "external_service": {
                 "app_development": "Replit",
+                "openai_developer": "OpenAI Platform",
                 "outlook_calendar": "Microsoft Outlook Calendar",
                 "file_storage": "Dropbox",
             }.get(route.capability),
