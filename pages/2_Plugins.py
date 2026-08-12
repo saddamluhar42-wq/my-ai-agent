@@ -7,18 +7,24 @@ from plugins.manager import fetch_manifest, plugin_payload
 
 st.set_page_config(page_title="Plugins", page_icon="🔌", layout="wide")
 st.title("🔌 Plugin Manager")
-st.caption("Connect external HTTPS plugins without putting heavy engineering into the core agent.")
+st.caption("Connect and execute external HTTPS plugins without putting heavy engineering into the core agent.")
 
 if "external_plugins" not in st.session_state:
     st.session_state["external_plugins"] = []
 
-st.subheader("Built-in external plugins")
+st.subheader("Coder")
 st.json({
     "name": coder_plugin.name,
     "version": coder_plugin.version,
     "capabilities": list(coder_plugin.capabilities),
-    "execution": "disabled; use a separate sandbox plugin",
+    "execution": coder_plugin.execution,
+    "connected": coder_plugin.connected,
 })
+
+if coder_plugin.connected:
+    st.success("Coder external executor is configured.")
+else:
+    st.warning("Coder executor is not connected. Set CODER_PLUGIN_ENDPOINT in Render Environment to the HTTPS sandbox endpoint.")
 
 st.divider()
 st.subheader("Connect external plugin")
@@ -35,6 +41,22 @@ if st.button("Connect Plugin", type="primary"):
         st.error(f"Plugin connection failed: {exc}")
 
 st.divider()
+st.subheader("Test Coder")
+capability = st.selectbox("Capability", list(coder_plugin.capabilities))
+prompt = st.text_area("Task", placeholder="Example: Review this Python function for bugs...", height=120)
+if st.button("Run Coder", type="primary", disabled=not coder_plugin.connected):
+    if not prompt.strip():
+        st.error("Enter a task first.")
+    else:
+        with st.spinner("Calling external Coder sandbox..."):
+            try:
+                result = coder_plugin.run(capability, prompt)
+                st.success("Coder execution completed.")
+                st.json(result)
+            except Exception as exc:
+                st.error(f"Coder execution failed: {exc}")
+
+st.divider()
 st.subheader("Connected external plugins")
 plugins = st.session_state["external_plugins"]
 if not plugins:
@@ -48,4 +70,4 @@ else:
             st.write("Capabilities:", ", ".join(item.get("capabilities", [])) or "None declared")
             st.caption(item["endpoint"])
 
-st.info("Security: only HTTPS manifests/endpoints are accepted. The manager does not download or execute arbitrary plugin source code.")
+st.info("Security: only HTTPS manifests/endpoints are accepted. Plugin source code is never downloaded or executed by this app. External plugins receive JSON requests only.")
